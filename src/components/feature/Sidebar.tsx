@@ -276,7 +276,7 @@ export default function Sidebar({
       src={logo} 
       alt="Logo" 
       className="h-8 w-auto"
-    /> LEADS AGRI
+    /> Digisaka
   </div>
   <button 
     onClick={onToggle}
