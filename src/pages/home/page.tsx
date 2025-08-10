@@ -3,6 +3,8 @@ import axios from 'axios';
 import Sidebar from '../../components/feature/Sidebar';
 import AnalysisPanel from '../../components/feature/AnalysisPanel';
 import MapView from '../../components/feature/MapView';
+import logo from "../../assets/logo.png";
+
 
 export default function Home() {
   // UI State
@@ -219,22 +221,27 @@ export default function Home() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Mobile Header */}
-        <div className="lg:hidden bg-white border-b border-gray-200 p-4 flex items-center justify-between">
-          <button 
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="p-2 rounded-lg hover:bg-gray-100"
-          >
-            <i className="ri-menu-line text-xl"></i>
-          </button>
-          <h1 className="text-lg font-semibold">AgriMonitor</h1>
-          <button 
-            onClick={() => setAnalysisPanelOpen(!analysisPanelOpen)}
-            className="p-2 rounded-lg hover:bg-gray-100"
-          >
-            <i className="ri-bar-chart-line text-xl"></i>
-          </button>
-        </div>
+<div className="lg:hidden bg-white border-b border-gray-200 p-4 flex items-center justify-between">
+  <button 
+    onClick={() => setSidebarOpen(!sidebarOpen)}
+    className="p-2 rounded-lg hover:bg-gray-100"
+  >
+    <i className="ri-menu-line text-xl"></i>
+  </button>
 
+  <img 
+    src={logo} 
+    alt="Logo" 
+    className="h-8 w-auto"
+  />
+
+  <button 
+    onClick={() => setAnalysisPanelOpen(!analysisPanelOpen)}
+    className="p-2 rounded-lg hover:bg-gray-100"
+  >
+    <i className="ri-bar-chart-line text-xl"></i>
+  </button>
+</div>
         {/* Map Area */}
         <div className="flex-1 relative">
           {/* Loading indicator for GeoJSON */}

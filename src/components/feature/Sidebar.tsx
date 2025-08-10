@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
+import logo from "../../assets/logo.png";
+
 
 interface SidebarProps {
   isOpen: boolean;
@@ -268,18 +270,21 @@ export default function Sidebar({
       } lg:relative lg:translate-x-0 lg:block overflow-y-auto`}>
         
         {/* Header */}
-        <div className="p-4 border-b border-gray-700 flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <i className="ri-leaf-line text-emerald-400 text-xl"></i>
-            <span className="text-lg font-semibold">AgriMonitor</span>
-          </div>
-          <button 
-            onClick={onToggle}
-            className="lg:hidden p-1 rounded hover:bg-gray-700"
-          >
-            <i className="ri-close-line text-xl"></i>
-          </button>
-        </div>
+<div className="p-4 border-b border-gray-700 flex items-center justify-between">
+  <div className="flex items-center space-x-2">
+    <img 
+      src={logo} 
+      alt="Logo" 
+      className="h-8 w-auto"
+    /> LEADS AGRI
+  </div>
+  <button 
+    onClick={onToggle}
+    className="lg:hidden p-1 rounded hover:bg-gray-700"
+  >
+    <i className="ri-close-line text-xl"></i>
+  </button>
+</div>
 
         <div className="p-4">
           {/* Tools & Layers Section */}
