@@ -30,7 +30,9 @@ export default function MapView({
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<Map | null>(null);
   const vectorLayerRef = useRef<VectorLayer | null>(null);
-  const [zoomLevel, setZoomLevel] = useState(12);
+  const heatMapLayerRef = useRef<TileLayer | null>(null);
+  const [zoomLevel, setZoomLevel] = useState(20);
+  const [showLegend, setShowLegend] = useState(false);
 
   // Initialize the map
   useEffect(() => {
@@ -138,6 +140,32 @@ export default function MapView({
     }
   }, [fieldGeoJson]);
 
+  // Handle heat map data
+  useEffect(() => {
+    if (!mapInstanceRef.current || !indexHeatMapData) return;
+
+    // Remove existing heat map layer if it exists
+    if (heatMapLayerRef.current) {
+      mapInstanceRef.current.removeLayer(heatMapLayerRef.current);
+      heatMapLayerRef.current = null;
+    }
+
+    // Add new heat map layer if we have tile URL
+    if (indexHeatMapData.tileUrl) {
+      const heatMapLayer = new TileLayer({
+        source: new XYZ({
+          url: indexHeatMapData.tileUrl,
+          crossOrigin: 'anonymous',
+        }),
+        opacity: 0.7, // Make it semi-transparent to see the base map
+      });
+
+      heatMapLayerRef.current = heatMapLayer;
+      mapInstanceRef.current.addLayer(heatMapLayer);
+      setShowLegend(true);
+    }
+  }, [indexHeatMapData]);
+
   // Handle zoom level changes
   useEffect(() => {
     if (mapInstanceRef.current) {
@@ -157,6 +185,27 @@ export default function MapView({
     if (selectedField && onZoomToField) {
       onZoomToField(selectedField.farm_id);
     }
+  };
+
+  const toggleHeatMapVisibility = () => {
+    if (heatMapLayerRef.current) {
+      const currentOpacity = heatMapLayerRef.current.getOpacity();
+      heatMapLayerRef.current.setOpacity(currentOpacity > 0 ? 0 : 0.7);
+    }
+  };
+
+  const createColorScale = (visParams: any) => {
+    if (!visParams || !visParams.palette) return [];
+    
+    const { min, max, palette } = visParams;
+    const steps = palette.length;
+    const stepSize = (max - min) / (steps - 1);
+    
+    return palette.map((color: string, index: number) => ({
+      color,
+      value: min + (stepSize * index),
+      label: (min + (stepSize * index)).toFixed(2)
+    }));
   };
 
   return (
@@ -192,6 +241,26 @@ export default function MapView({
         </button>
       </div>
 
+      {/* Heat Map Controls */}
+      {indexHeatMapData && (
+        <div className="absolute top-16 left-4 bg-white rounded-lg shadow-lg z-10 p-2">
+          <button 
+            onClick={toggleHeatMapVisibility}
+            className="w-10 h-10 flex items-center justify-center hover:bg-gray-100 rounded-lg"
+            title="Toggle Heat Map"
+          >
+            <i className="ri-eye-line text-lg"></i>
+          </button>
+          <button 
+            onClick={() => setShowLegend(!showLegend)}
+            className="w-10 h-10 flex items-center justify-center hover:bg-gray-100 rounded-lg mt-1"
+            title="Toggle Legend"
+          >
+            <i className="ri-palette-line text-lg"></i>
+          </button>
+        </div>
+      )}
+
       {/* Search Bar */}
       <div className="absolute top-4 left-1/2 transform -translate-x-1/2 w-full max-w-md z-10">
         <div className="relative">
@@ -207,7 +276,41 @@ export default function MapView({
         </div>
       </div>
 
-   
+      {/* Legend */}
+      {showLegend && indexHeatMapData?.visParams && (
+        <div className="absolute top-4 right-20 bg-white rounded-lg shadow-lg p-4 z-10 max-w-xs">
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="text-sm font-semibold text-gray-800">
+              {indexHeatMapData.index?.toUpperCase() || 'Index'} Legend
+            </h4>
+            <button 
+              onClick={() => setShowLegend(false)}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              <i className="ri-close-line text-sm"></i>
+            </button>
+          </div>
+          
+          <div className="space-y-1">
+            {createColorScale(indexHeatMapData.visParams).map((item, index) => (
+              <div key={index} className="flex items-center space-x-2">
+                <div 
+                  className="w-4 h-4 rounded border border-gray-300"
+                  style={{ backgroundColor: item.color }}
+                ></div>
+                <span className="text-xs text-gray-600">{item.label}</span>
+              </div>
+            ))}
+          </div>
+          
+          <div className="mt-3 pt-2 border-t border-gray-200">
+            <div className="text-xs text-gray-500">
+              <div>Date: {indexHeatMapData.firstImageDate}</div>
+              <div>Range: {indexHeatMapData.visParams.min} to {indexHeatMapData.visParams.max}</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Analysis Status */}
       {analysisResults && (

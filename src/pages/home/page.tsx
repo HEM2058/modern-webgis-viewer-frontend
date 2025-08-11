@@ -5,7 +5,6 @@ import AnalysisPanel from '../../components/feature/AnalysisPanel';
 import MapView from '../../components/feature/MapView';
 import logo from "../../assets/logo.png";
 
-
 export default function Home() {
   // UI State
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -60,17 +59,20 @@ export default function Home() {
     }
   };
 
-  // Handlers from AnalysisPanel
+  // Updated handler to receive analysis data from AnalysisPanel
   const handleAnalysisRun = async (analysisType, params) => {
     if (!selectedField) return;
 
     setProcessing(true);
-    setProcessingType(analysisType);
+    setProcessingType(analysisType === 'heatmap' ? 'Generating Heat Map...' : `Running ${analysisType} analysis...`);
 
     try {
       switch (analysisType) {
         case 'heatmap':
-          await handleHeatMapAnalysis(params);
+          // Heat map data is already processed in AnalysisPanel
+          // We just need to set the data here
+          setIndexHeatMapData(params);
+          setAnalysisResults(params);
           break;
         case 'timeseries':
           await handleTimeSeriesAnalysis(params);
@@ -86,25 +88,6 @@ export default function Home() {
     } finally {
       setProcessing(false);
       setProcessingType(null);
-    }
-  };
-
-  const handleHeatMapAnalysis = async (params) => {
-    try {
-      // Simulate API call for heat map
-      const response = await fetch(`https://digisaka.app/api/mobile/index-map/${selectedField.farm_id}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          index_type: params.indexType,
-          observation_date: params.observationDate
-        })
-      });
-      const data = await response.json();
-      setIndexHeatMapData(data);
-      setAnalysisResults(data);
-    } catch (error) {
-      console.error('Heat map analysis error:', error);
     }
   };
 
@@ -200,6 +183,7 @@ export default function Home() {
         setFieldGeoJson(null);
         setAnalysisPanelOpen(false);
         setAnalysisResults(null);
+        setIndexHeatMapData(null);
       }
     } catch (error) {
       console.error('Delete field error:', error);
@@ -221,35 +205,39 @@ export default function Home() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Mobile Header */}
-<div className="lg:hidden bg-white border-b border-gray-200 p-4 flex items-center justify-between">
-  <button 
-    onClick={() => setSidebarOpen(!sidebarOpen)}
-    className="p-2 rounded-lg hover:bg-gray-100"
-  >
-    <i className="ri-menu-line text-xl"></i>
-  </button>
+        <div className="lg:hidden bg-white border-b border-gray-200 p-4 flex items-center justify-between">
+          <button 
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="p-2 rounded-lg hover:bg-gray-100"
+          >
+            <i className="ri-menu-line text-xl"></i>
+          </button>
 
-  <img 
-    src={logo} 
-    alt="Logo" 
-    className="h-8 w-auto"
-  />
+          <img 
+            src={logo} 
+            alt="Logo" 
+            className="h-8 w-auto"
+          />
 
-  <button 
-    onClick={() => setAnalysisPanelOpen(!analysisPanelOpen)}
-    className="p-2 rounded-lg hover:bg-gray-100"
-  >
-    <i className="ri-bar-chart-line text-xl"></i>
-  </button>
-</div>
+          <button 
+            onClick={() => setAnalysisPanelOpen(!analysisPanelOpen)}
+            className="p-2 rounded-lg hover:bg-gray-100"
+          >
+            <i className="ri-bar-chart-line text-xl"></i>
+          </button>
+        </div>
+
         {/* Map Area */}
         <div className="flex-1 relative">
-          {/* Loading indicator for GeoJSON */}
-          {isLoadingGeoJson && (
-            <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-10 bg-white rounded-lg shadow-lg p-3">
-              <div className="flex items-center space-x-2">
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-emerald-500"></div>
-                <span className="text-sm text-gray-600">Loading field boundaries...</span>
+          {/* Processing indicator */}
+          {processing && (
+            <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-20 bg-white rounded-lg shadow-lg p-4">
+              <div className="flex items-center space-x-3">
+                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-emerald-500"></div>
+                <div className="text-sm text-gray-700">
+                  <div className="font-medium">{processingType}</div>
+                  <div className="text-gray-500">Please wait...</div>
+                </div>
               </div>
             </div>
           )}
