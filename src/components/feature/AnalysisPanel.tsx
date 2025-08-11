@@ -356,10 +356,9 @@ export default function AnalysisPanel({
       )}
       
       {/* Analysis Panel */}
-      <div className={`fixed right-0 top-0 h-full w-96 bg-gray-900 text-white transform transition-transform duration-300 z-50 ${
-        isOpen ? 'translate-x-0' : 'translate-x-full'
-      } lg:relative lg:translate-x-0 lg:block overflow-y-auto`}>
-        
+  <div className={`fixed right-0 top-0 h-full w-full sm:w-96 bg-gray-900 text-white transform transition-transform duration-300 z-50 ${
+  isOpen ? 'translate-x-0' : 'translate-x-full'
+} lg:relative lg:translate-x-0 lg:block overflow-y-auto`}>
         {/* Header */}
         <div className="p-4 border-b border-gray-700 flex items-center justify-between">
           <button
@@ -605,92 +604,189 @@ export default function AnalysisPanel({
                   </div>
                 )}
 
-                {/* Time Series Chart */}
-                {chartData.length > 0 && (
-                  <div className="mb-6 bg-gray-800 rounded-lg p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <h5 className="text-sm font-medium text-emerald-400">
-                        {selectedIndex} Time Series
-                      </h5>
-                      <div className="text-xs text-gray-400">
-                        {chartData.length} observations
-                      </div>
-                    </div>
-                    
-                    {/* Chart Area */}
-                    <div className="h-32 flex items-end space-x-1 relative">
-                      {chartData.map((data, index) => {
-                        const normalizedValue = maxValue > minValue 
-                          ? ((data.value - minValue) / (maxValue - minValue)) * 100
-                          : 50;
-                        
-                        const isSelected = index === timeSeriesSliderIndex;
-                        
-                        return (
-                          <div 
-                            key={index} 
-                            className="flex-1 flex flex-col items-center cursor-pointer group"
-                            onClick={() => handleTimeSeriesSliderChange(index)}
-                          >
-                            <div 
-                              className={`w-full rounded-t transition-all duration-200 ${
-                                isSelected 
-                                  ? 'bg-yellow-400 shadow-lg' 
-                                  : 'bg-emerald-500 group-hover:bg-emerald-400'
-                              }`}
-                              style={{ height: `${Math.max(normalizedValue, 3)}%` }}
-                            ></div>
-                            <span className="text-xs text-gray-400 mt-1 transform -rotate-45 origin-left truncate">
-                              {data.formattedDate}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    
-                    {/* Y-axis labels */}
-                    <div className="flex justify-between text-xs text-gray-400 mt-2">
-                      <span>{minValue.toFixed(2)}</span>
-                      <span>{((minValue + maxValue) / 2).toFixed(2)}</span>
-                      <span>{maxValue.toFixed(2)}</span>
-                    </div>
+{/* Time Series Line Chart */}
+{chartData.length > 0 && (
+  <div className="mb-6 bg-gray-800 rounded-lg p-6 border border-gray-700">
+    <div className="flex items-center justify-between mb-6">
+      <h5 className="text-sm font-medium text-gray-200">
+        {selectedIndex} (Normalized Difference Vegetation Index)
+      </h5>
+      <div className="text-xs text-gray-400">
+        {chartData.length} observations
+      </div>
+    </div>
+    
+    {/* Chart Container */}
+    <div className="relative" style={{ height: '300px', width: '100%' }}>
+      <svg width="100%" height="100%" viewBox="0 0 500 300" className="overflow-visible">
+        {/* Chart background */}
+        <rect width="450" height="250" x="40" y="20" fill="#1f2937" stroke="none"/>
+        
+        {/* Horizontal grid lines */}
+        {[0, 0.2, 0.4, 0.6, 0.8, 1].map((ratio, index) => {
+          const y = 270 - (ratio * 250);
+          const value = minValue + (maxValue - minValue) * ratio;
+          return (
+            <g key={index}>
+              <line 
+                x1="40" 
+                y1={y} 
+                x2="490" 
+                y2={y} 
+                stroke="#374151" 
+                strokeWidth="1"
+              />
+              <text
+                x="35"
+                y={y + 3}
+                fill="#9ca3af"
+                fontSize="10"
+                textAnchor="end"
+              >
+                {value.toFixed(2)}
+              </text>
+            </g>
+          );
+        })}
+        
+        {/* Chart line */}
+        <path
+          d={chartData.map((data, index) => {
+            const x = 40 + (index / (chartData.length - 1)) * 450;
+            const normalizedValue = maxValue > minValue 
+              ? ((data.value - minValue) / (maxValue - minValue))
+              : 0.5;
+            const y = 270 - (normalizedValue * 250);
+            return `${index === 0 ? 'M' : 'L'} ${x} ${y}`;
+          }).join(' ')}
+          fill="none"
+          stroke="#3b82f6"
+          strokeWidth="2"
+        />
+        
+        {/* Data points */}
+        {chartData.map((data, index) => {
+          const x = 40 + (index / (chartData.length - 1)) * 450;
+          const normalizedValue = maxValue > minValue 
+            ? ((data.value - minValue) / (maxValue - minValue))
+            : 0.5;
+          const y = 270 - (normalizedValue * 250);
+          const isSelected = index === timeSeriesSliderIndex;
+          
+          return (
+            <circle
+              key={index}
+              cx={x}
+              cy={y}
+              r={isSelected ? "5" : "4"}
+              fill={isSelected ? "#dc2626" : "#3b82f6"}
+              stroke="#1f2937"
+              strokeWidth="2"
+              className="cursor-pointer transition-all duration-200"
+              onClick={() => handleTimeSeriesSliderChange(index)}
+            />
+          );
+        })}
+        
+        {/* X-axis */}
+        <line x1="40" y1="270" x2="490" y2="270" stroke="#9ca3af" strokeWidth="1"/>
+        
+        {/* X-axis labels */}
+        {chartData.map((data, index) => {
+          if (index % Math.max(1, Math.floor(chartData.length / 6)) === 0 || index === chartData.length - 1) {
+            const x = 40 + (index / (chartData.length - 1)) * 450;
+            return (
+              <text
+                key={index}
+                x={x}
+                y="290"
+                fill="#9ca3af"
+                fontSize="10"
+                textAnchor="middle"
+                transform={`rotate(-45, ${x}, 290)`}
+              >
+                {data.date}
+              </text>
+            );
+          }
+          return null;
+        })}
+        
+        {/* Y-axis */}
+        <line x1="40" y1="20" x2="40" y2="270" stroke="#9ca3af" strokeWidth="1"/>
+      </svg>
+    </div>
 
-                    {/* Current value display */}
-                    {timeSeriesData?.results?.[timeSeriesSliderIndex] && (
-                      <div className="mt-3 p-2 bg-gray-700 rounded text-center">
-                        <div className="text-sm font-medium text-yellow-400">
-                          {new Date(timeSeriesData.results[timeSeriesSliderIndex].date).toLocaleDateString()}
-                        </div>
-                        <div className="text-lg font-bold text-white">
-                          {timeSeriesData.results[timeSeriesSliderIndex].mean_index_value.toFixed(3)}
-                        </div>
-                        <div className="text-xs text-gray-400">Mean {selectedIndex} Value</div>
-                      </div>
-                    )}
-
-                    {/* Playback Controls */}
-                    <div className="mt-4 flex items-center justify-center space-x-3">
-                      <button
-                        onClick={() => setIsPlayingTimeSeries(!isPlayingTimeSeries)}
-                        className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 rounded text-sm flex items-center"
-                      >
-                        <i className={`ri-${isPlayingTimeSeries ? 'pause' : 'play'}-line mr-1`}></i>
-                        {isPlayingTimeSeries ? 'Pause' : 'Play'}
-                      </button>
-                      
-                      <select
-                        value={playbackSpeed}
-                        onChange={(e) => setPlaybackSpeed(Number(e.target.value))}
-                        className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs"
-                      >
-                        <option value={2000}>0.5x</option>
-                        <option value={1000}>1x</option>
-                        <option value={500}>2x</option>
-                        <option value={250}>4x</option>
-                      </select>
-                    </div>
-                  </div>
-                )}
+    
+    {/* Current value display */}
+    {timeSeriesData?.results?.[timeSeriesSliderIndex] && (
+      <div className="mt-6 p-4 bg-gray-700 rounded-lg border border-gray-600">
+        <div className="flex justify-between items-center">
+          <div>
+            <div className="text-sm font-medium text-gray-200">
+              {new Date(timeSeriesData.results[timeSeriesSliderIndex].date).toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+              })}
+            </div>
+            <div className="text-xl font-bold text-blue-400">
+              {timeSeriesData.results[timeSeriesSliderIndex].mean_index_value.toFixed(3)}
+            </div>
+            <div className="text-xs text-gray-400">Mean {selectedIndex} Value</div>
+          </div>
+          
+          <div className="text-right">
+            <div className="text-xs text-gray-400">Observation</div>
+            <div className="text-sm font-medium text-gray-200">
+              {timeSeriesSliderIndex + 1} of {chartData.length}
+            </div>
+          </div>
+        </div>
+        
+        {/* Trend indicator */}
+        {timeSeriesSliderIndex > 0 && (
+          <div className="mt-3 pt-3 border-t border-gray-600">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-gray-400">Change from previous:</span>
+              <div className={`flex items-center ${
+                timeSeriesData.results[timeSeriesSliderIndex].mean_index_value > 
+                timeSeriesData.results[timeSeriesSliderIndex - 1].mean_index_value 
+                  ? 'text-green-400' : 'text-red-400'
+              }`}>
+                <i className={`ri-arrow-${
+                  timeSeriesData.results[timeSeriesSliderIndex].mean_index_value > 
+                  timeSeriesData.results[timeSeriesSliderIndex - 1].mean_index_value 
+                    ? 'up' : 'down'
+                }-line mr-1`}></i>
+                {Math.abs(
+                  timeSeriesData.results[timeSeriesSliderIndex].mean_index_value - 
+                  timeSeriesData.results[timeSeriesSliderIndex - 1].mean_index_value
+                ).toFixed(4)}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    )}
+    
+    {/* Navigation slider */}
+    <div className="mt-4">
+      <input
+        type="range"
+        min="0"
+        max={chartData.length - 1}
+        value={timeSeriesSliderIndex}
+        onChange={(e) => handleTimeSeriesSliderChange(Number(e.target.value))}
+        className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer slider-dark"
+      />
+      <div className="flex justify-between text-xs text-gray-400 mt-1">
+        <span>Start</span>
+        <span>End</span>
+      </div>
+    </div>
+  </div>
+)}
 
                 <button
                   onClick={handleRunAnalysis}
