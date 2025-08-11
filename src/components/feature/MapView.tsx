@@ -13,6 +13,7 @@ interface MapViewProps {
   fieldGeoJson?: any;
   analysisResults?: any;
   indexHeatMapData?: any;
+  timeSeriesData?: any;
   onFieldClick?: (field: any) => void;
   onZoomToField?: (fieldId: any) => void;
   isLoadingGeoJson?: boolean;
@@ -23,6 +24,7 @@ export default function MapView({
   fieldGeoJson,
   analysisResults,
   indexHeatMapData,
+  timeSeriesData,
   onFieldClick,
   onZoomToField,
   isLoadingGeoJson = false
@@ -31,8 +33,16 @@ export default function MapView({
   const mapInstanceRef = useRef<Map | null>(null);
   const vectorLayerRef = useRef<VectorLayer | null>(null);
   const heatMapLayerRef = useRef<TileLayer | null>(null);
+  const timeSeriesLayerRef = useRef<TileLayer | null>(null);
+  
   const [zoomLevel, setZoomLevel] = useState(20);
   const [showLegend, setShowLegend] = useState(false);
+  
+  // Time Series Slider States
+  const [showTimeSeriesSlider, setShowTimeSeriesSlider] = useState(false);
+  const [currentTimeSeriesIndex, setCurrentTimeSeriesIndex] = useState(0);
+  const [isPlayingTimeSeries, setIsPlayingTimeSeries] = useState(false);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1000);
 
   // Initialize the map
   useEffect(() => {
@@ -52,11 +62,11 @@ export default function MapView({
       source: vectorSource,
       style: new Style({
         stroke: new Stroke({
-          color: '#10b981', // Emerald color
+          color: '#10b981',
           width: 3,
         }),
         fill: new Fill({
-          color: 'rgba(16, 185, 129, 0.1)', // Semi-transparent emerald
+          color: 'rgba(16, 185, 129, 0.1)',
         }),
       }),
     });
@@ -68,10 +78,10 @@ export default function MapView({
       target: mapRef.current,
       layers: [satelliteLayer, vectorLayer],
       view: new View({
-        center: fromLonLat([120.86, 15.59]), // Default center
+        center: fromLonLat([120.86, 15.59]),
         zoom: zoomLevel,
       }),
-      controls: defaultControls({ zoom: false }), // Disable default zoom controls
+      controls: defaultControls({ zoom: false }),
     });
 
     mapInstanceRef.current = map;
@@ -102,18 +112,14 @@ export default function MapView({
     if (!vectorSource) return;
 
     try {
-      // Clear existing features
       vectorSource.clear();
 
-      // Parse and add the new GeoJSON
       const format = new GeoJSON({
-        featureProjection: 'EPSG:3857', // Web Mercator projection
+        featureProjection: 'EPSG:3857',
       });
 
-      // Create feature from GeoJSON
       const feature = format.readFeature(fieldGeoJson);
       
-      // Add custom style for selected field
       feature.setStyle(new Style({
         stroke: new Stroke({
           color: '#10b981',
@@ -126,7 +132,6 @@ export default function MapView({
 
       vectorSource.addFeature(feature);
 
-      // Zoom to the feature extent
       const extent = feature.getGeometry()?.getExtent();
       if (extent) {
         mapInstanceRef.current.getView().fit(extent, {
@@ -157,7 +162,7 @@ export default function MapView({
           url: indexHeatMapData.tileUrl,
           crossOrigin: 'anonymous',
         }),
-        opacity: 0.7, // Make it semi-transparent to see the base map
+        opacity: 0.7,
       });
 
       heatMapLayerRef.current = heatMapLayer;
@@ -165,6 +170,74 @@ export default function MapView({
       setShowLegend(true);
     }
   }, [indexHeatMapData]);
+
+  // Handle time series data and show slider
+  useEffect(() => {
+    if (timeSeriesData?.results && timeSeriesData.results.length > 0) {
+      setShowTimeSeriesSlider(true);
+      setCurrentTimeSeriesIndex(0);
+      // Load the first time series image
+      updateTimeSeriesLayer(0);
+    } else {
+      setShowTimeSeriesSlider(false);
+      // Remove time series layer if it exists
+      if (timeSeriesLayerRef.current && mapInstanceRef.current) {
+        mapInstanceRef.current.removeLayer(timeSeriesLayerRef.current);
+        timeSeriesLayerRef.current = null;
+      }
+    }
+  }, [timeSeriesData]);
+
+  // Update time series layer
+  const updateTimeSeriesLayer = (index: number) => {
+    if (!mapInstanceRef.current || !timeSeriesData?.results?.[index]) return;
+
+    // Remove existing time series layer
+    if (timeSeriesLayerRef.current) {
+      mapInstanceRef.current.removeLayer(timeSeriesLayerRef.current);
+      timeSeriesLayerRef.current = null;
+    }
+
+    // Add new time series layer
+    const imageData = timeSeriesData.results[index];
+    if (imageData.tile_url) {
+      const timeSeriesLayer = new TileLayer({
+        source: new XYZ({
+          url: imageData.tile_url,
+          crossOrigin: 'anonymous',
+        }),
+        opacity: 0.7,
+      });
+
+      timeSeriesLayerRef.current = timeSeriesLayer;
+      mapInstanceRef.current.addLayer(timeSeriesLayer);
+    }
+  };
+
+  // Handle time series slider change
+  const handleTimeSeriesSliderChange = (index: number) => {
+    setCurrentTimeSeriesIndex(index);
+    updateTimeSeriesLayer(index);
+  };
+
+  // Auto-play functionality for time series
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    
+    if (isPlayingTimeSeries && timeSeriesData?.results) {
+      interval = setInterval(() => {
+        setCurrentTimeSeriesIndex(prev => {
+          const nextIndex = (prev + 1) % timeSeriesData.results.length;
+          updateTimeSeriesLayer(nextIndex);
+          return nextIndex;
+        });
+      }, playbackSpeed);
+    }
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isPlayingTimeSeries, playbackSpeed, timeSeriesData]);
 
   // Handle zoom level changes
   useEffect(() => {
@@ -181,16 +254,17 @@ export default function MapView({
     setZoomLevel(prev => Math.max(prev - 1, 1));
   };
 
-  const handleZoomToField = () => {
-    if (selectedField && onZoomToField) {
-      onZoomToField(selectedField.farm_id);
-    }
-  };
-
   const toggleHeatMapVisibility = () => {
     if (heatMapLayerRef.current) {
       const currentOpacity = heatMapLayerRef.current.getOpacity();
       heatMapLayerRef.current.setOpacity(currentOpacity > 0 ? 0 : 0.7);
+    }
+  };
+
+  const toggleTimeSeriesVisibility = () => {
+    if (timeSeriesLayerRef.current) {
+      const currentOpacity = timeSeriesLayerRef.current.getOpacity();
+      timeSeriesLayerRef.current.setOpacity(currentOpacity > 0 ? 0 : 0.7);
     }
   };
 
@@ -206,6 +280,11 @@ export default function MapView({
       value: min + (stepSize * index),
       label: (min + (stepSize * index)).toFixed(2)
     }));
+  };
+
+  // Get current time series image data
+  const getCurrentTimeSeriesImage = () => {
+    return timeSeriesData?.results?.[currentTimeSeriesIndex];
   };
 
   return (
@@ -241,23 +320,120 @@ export default function MapView({
         </button>
       </div>
 
-      {/* Heat Map Controls */}
-      {indexHeatMapData && (
-        <div className="absolute top-16 left-4 bg-white rounded-lg shadow-lg z-10 p-2">
+      {/* Layer Controls */}
+      <div className="absolute top-16 left-4 bg-white rounded-lg shadow-lg z-10 p-2 space-y-1">
+        {/* Heat Map Controls */}
+        {indexHeatMapData && (
           <button 
             onClick={toggleHeatMapVisibility}
             className="w-10 h-10 flex items-center justify-center hover:bg-gray-100 rounded-lg"
             title="Toggle Heat Map"
           >
-            <i className="ri-eye-line text-lg"></i>
+            <i className="ri-fire-line text-lg"></i>
           </button>
+        )}
+        
+        {/* Time Series Controls */}
+        {showTimeSeriesSlider && (
+          <button 
+            onClick={toggleTimeSeriesVisibility}
+            className="w-10 h-10 flex items-center justify-center hover:bg-gray-100 rounded-lg"
+            title="Toggle Time Series"
+          >
+            <i className="ri-time-line text-lg"></i>
+          </button>
+        )}
+        
+        {/* Legend Toggle */}
+        {(indexHeatMapData || showTimeSeriesSlider) && (
           <button 
             onClick={() => setShowLegend(!showLegend)}
-            className="w-10 h-10 flex items-center justify-center hover:bg-gray-100 rounded-lg mt-1"
+            className="w-10 h-10 flex items-center justify-center hover:bg-gray-100 rounded-lg"
             title="Toggle Legend"
           >
             <i className="ri-palette-line text-lg"></i>
           </button>
+        )}
+      </div>
+
+      {/* Time Series Slider */}
+      {showTimeSeriesSlider && timeSeriesData?.results && (
+        <div className="absolute bottom-20 left-4 right-4 bg-white bg-opacity-95 backdrop-blur-sm rounded-lg shadow-lg p-4 z-10">
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="text-sm font-semibold text-gray-800 flex items-center">
+              <i className="ri-time-line mr-2"></i>
+              Time Series: {timeSeriesData.index?.toUpperCase()}
+            </h4>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => setIsPlayingTimeSeries(!isPlayingTimeSeries)}
+                className="px-3 py-1 bg-emerald-600 text-white rounded hover:bg-emerald-700 text-sm flex items-center"
+              >
+                <i className={`ri-${isPlayingTimeSeries ? 'pause' : 'play'}-line mr-1`}></i>
+                {isPlayingTimeSeries ? 'Pause' : 'Play'}
+              </button>
+              
+              <select
+                value={playbackSpeed}
+                onChange={(e) => setPlaybackSpeed(Number(e.target.value))}
+                className="bg-gray-100 border border-gray-300 rounded px-2 py-1 text-xs"
+              >
+                <option value={2000}>0.5x</option>
+                <option value={1000}>1x</option>
+                <option value={500}>2x</option>
+                <option value={250}>4x</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Slider */}
+          <div className="mb-3">
+            <input
+              type="range"
+              min="0"
+              max={timeSeriesData.results.length - 1}
+              value={currentTimeSeriesIndex}
+              onChange={(e) => handleTimeSeriesSliderChange(Number(e.target.value))}
+              className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
+              style={{
+                background: `linear-gradient(to right, #10b981 0%, #10b981 ${
+                  (currentTimeSeriesIndex / (timeSeriesData.results.length - 1)) * 100
+                }%, #e5e7eb ${(currentTimeSeriesIndex / (timeSeriesData.results.length - 1)) * 100}%, #e5e7eb 100%)`
+              }}
+            />
+            <div className="flex justify-between text-xs text-gray-500 mt-1">
+              <span>{new Date(timeSeriesData.results[0].date).toLocaleDateString()}</span>
+              <span>{new Date(timeSeriesData.results[timeSeriesData.results.length - 1].date).toLocaleDateString()}</span>
+            </div>
+          </div>
+
+          {/* Current Image Info */}
+          {getCurrentTimeSeriesImage() && (
+            <div className="grid grid-cols-3 gap-4 text-sm">
+              <div className="text-center">
+                <div className="text-gray-600">Date</div>
+                <div className="font-semibold">
+                  {new Date(getCurrentTimeSeriesImage().date).toLocaleDateString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric'
+                  })}
+                </div>
+              </div>
+              <div className="text-center">
+                <div className="text-gray-600">Mean {timeSeriesData.index?.toUpperCase()}</div>
+                <div className="font-semibold text-emerald-600">
+                  {getCurrentTimeSeriesImage().mean_index_value.toFixed(3)}
+                </div>
+              </div>
+              <div className="text-center">
+                <div className="text-gray-600">Image</div>
+                <div className="font-semibold">
+                  {currentTimeSeriesIndex + 1} / {timeSeriesData.results.length}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -277,11 +453,13 @@ export default function MapView({
       </div>
 
       {/* Legend */}
-      {showLegend && indexHeatMapData?.visParams && (
+      {showLegend && (
         <div className="absolute top-4 right-20 bg-white rounded-lg shadow-lg p-4 z-10 max-w-xs">
           <div className="flex items-center justify-between mb-3">
             <h4 className="text-sm font-semibold text-gray-800">
-              {indexHeatMapData.index?.toUpperCase() || 'Index'} Legend
+              {showTimeSeriesSlider && getCurrentTimeSeriesImage() 
+                ? `${timeSeriesData.index?.toUpperCase()} - ${new Date(getCurrentTimeSeriesImage().date).toLocaleDateString()}`
+                : indexHeatMapData?.index?.toUpperCase() || 'Index'} Legend
             </h4>
             <button 
               onClick={() => setShowLegend(false)}
@@ -292,7 +470,8 @@ export default function MapView({
           </div>
           
           <div className="space-y-1">
-            {createColorScale(indexHeatMapData.visParams).map((item, index) => (
+            {(timeSeriesData?.vis_params || indexHeatMapData?.visParams) && 
+             createColorScale(timeSeriesData?.vis_params || indexHeatMapData?.visParams).map((item, index) => (
               <div key={index} className="flex items-center space-x-2">
                 <div 
                   className="w-4 h-4 rounded border border-gray-300"
@@ -305,8 +484,17 @@ export default function MapView({
           
           <div className="mt-3 pt-2 border-t border-gray-200">
             <div className="text-xs text-gray-500">
-              <div>Date: {indexHeatMapData.firstImageDate}</div>
-              <div>Range: {indexHeatMapData.visParams.min} to {indexHeatMapData.visParams.max}</div>
+              {showTimeSeriesSlider && getCurrentTimeSeriesImage() ? (
+                <>
+                  <div>Date: {getCurrentTimeSeriesImage().date}</div>
+                  <div>Mean Value: {getCurrentTimeSeriesImage().mean_index_value.toFixed(3)}</div>
+                </>
+              ) : indexHeatMapData ? (
+                <>
+                  <div>Date: {indexHeatMapData.firstImageDate}</div>
+                  <div>Range: {indexHeatMapData.visParams?.min} to {indexHeatMapData.visParams?.max}</div>
+                </>
+              ) : null}
             </div>
           </div>
         </div>
@@ -355,7 +543,7 @@ export default function MapView({
         Zoom: {Math.round(zoomLevel)}
       </div>
 
-      {/* Coordinates Display */}
+      {/* Field Info Display */}
       <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-black bg-opacity-70 text-white px-3 py-2 rounded-lg text-sm z-10">
         {selectedField ? (
           `Field: ${selectedField.farm_name}`
@@ -363,6 +551,29 @@ export default function MapView({
           'Select a field to view details'
         )}
       </div>
+
+      <style jsx>{`
+        .slider::-webkit-slider-thumb {
+          appearance: none;
+          height: 20px;
+          width: 20px;
+          border-radius: 50%;
+          background: #10b981;
+          cursor: pointer;
+          border: 2px solid #ffffff;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .slider::-moz-range-thumb {
+          height: 20px;
+          width: 20px;
+          border-radius: 50%;
+          background: #10b981;
+          cursor: pointer;
+          border: 2px solid #ffffff;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+      `}</style>
     </div>
   );
 }

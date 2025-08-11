@@ -22,6 +22,7 @@ export default function Home() {
   const [indexData, setIndexData] = useState(null);
   const [vhiData, setVhiData] = useState(null);
   const [indexHeatMapData, setIndexHeatMapData] = useState(null);
+  const [timeSeriesData, setTimeSeriesData] = useState(null); // Added time series state
 
   // Fetch GeoJSON for the selected field
   const fetchFieldGeoJson = async (fieldId) => {
@@ -51,6 +52,7 @@ export default function Home() {
     setIndexData(null);
     setVhiData(null);
     setIndexHeatMapData(null);
+    setTimeSeriesData(null); // Clear time series data
     setFieldGeoJson(null);
     
     // Fetch GeoJSON for the selected field
@@ -64,7 +66,7 @@ export default function Home() {
     if (!selectedField) return;
 
     setProcessing(true);
-    setProcessingType(analysisType === 'heatmap' ? 'Generating Heat Map...' : `Running ${analysisType} analysis...`);
+    setProcessingType(getProcessingMessage(analysisType, params));
 
     try {
       switch (analysisType) {
@@ -73,14 +75,23 @@ export default function Home() {
           // We just need to set the data here
           setIndexHeatMapData(params);
           setAnalysisResults(params);
+          console.log('Heat map data set:', params);
           break;
+          
         case 'timeseries':
-          await handleTimeSeriesAnalysis(params);
+          // Time series data is already processed in AnalysisPanel
+          // Set the time series data for the MapView component
+          setTimeSeriesData(params);
+          setAnalysisResults(params);
+          console.log('Time series data set:', params);
           break;
+          
         case 'report':
           await handleReportGeneration(params);
           break;
+          
         default:
+          console.warn('Unknown analysis type:', analysisType);
           break;
       }
     } catch (error) {
@@ -91,9 +102,27 @@ export default function Home() {
     }
   };
 
+  // Helper function to get processing message
+  const getProcessingMessage = (analysisType, params) => {
+    switch (analysisType) {
+      case 'heatmap':
+        return `Generating ${params.index} Heat Map...`;
+      case 'timeseries':
+        return `Generating ${params.index} Time Series...`;
+      case 'report':
+        return 'Generating Report...';
+      default:
+        return `Running ${analysisType} analysis...`;
+    }
+  };
+
   const handleTimeSeriesAnalysis = async (params) => {
     try {
-      // Simulate API calls for time series
+      // This is now handled directly in AnalysisPanel
+      // Keeping this function for backward compatibility or future use
+      console.log('Time series analysis params:', params);
+      
+      // Simulate API calls for time series if needed
       const [indexResponse, vhiResponse] = await Promise.all([
         fetch(`https://digisaka.app/api/mobile/field-index/${selectedField.farm_id}`, {
           method: 'POST',
@@ -166,6 +195,7 @@ export default function Home() {
     setIndexData(null);
     setVhiData(null);
     setIndexHeatMapData(null);
+    setTimeSeriesData(null); // Clear time series data
     setSelectedField(null);
     setFieldGeoJson(null);
     setAnalysisPanelOpen(false);
@@ -184,10 +214,18 @@ export default function Home() {
         setAnalysisPanelOpen(false);
         setAnalysisResults(null);
         setIndexHeatMapData(null);
+        setTimeSeriesData(null); // Clear time series data
       }
     } catch (error) {
       console.error('Delete field error:', error);
     }
+  };
+
+  // Handle time series slider changes from AnalysisPanel
+  const handleTimeSeriesSliderChange = (imageData) => {
+    console.log('Time series slider changed:', imageData);
+    // This can be used to sync UI or trigger additional actions
+    // The MapView component handles the actual layer updates
   };
 
   return (
@@ -247,6 +285,7 @@ export default function Home() {
             fieldGeoJson={fieldGeoJson}
             analysisResults={analysisResults}
             indexHeatMapData={indexHeatMapData}
+            timeSeriesData={timeSeriesData} // Pass time series data to MapView
             onFieldClick={handleFieldSelect}
             onZoomToField={handleZoomToField}
             isLoadingGeoJson={isLoadingGeoJson}
@@ -270,6 +309,8 @@ export default function Home() {
           indexData={indexData}
           vhiData={vhiData}
           indexHeatMapData={indexHeatMapData}
+          timeSeriesData={timeSeriesData} // Pass time series data to AnalysisPanel
+          onTimeSeriesSliderChange={handleTimeSeriesSliderChange} // Handle slider changes
         />
       )}
     </div>

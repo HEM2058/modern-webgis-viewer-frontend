@@ -6,7 +6,7 @@ interface AnalysisPanelProps {
   onToggle: () => void;
   selectedField?: any;
   fieldGeoJson?: any;
-  onAnalysisRun?: (params: any) => void;
+  onAnalysisRun?: (analysisType: string, params: any) => void;
   onZoomToField?: () => void;
   onCloseAnalysis?: () => void;
   processing?: boolean;
@@ -15,6 +15,8 @@ interface AnalysisPanelProps {
   indexData?: any;
   vhiData?: any;
   indexHeatMapData?: any;
+  timeSeriesData?: any;
+  onTimeSeriesSliderChange?: (imageData: any) => void;
 }
 
 export default function AnalysisPanel({ 
@@ -30,12 +32,14 @@ export default function AnalysisPanel({
   analysisResults,
   indexData,
   vhiData,
-  indexHeatMapData
+  indexHeatMapData,
+  timeSeriesData,
+  onTimeSeriesSliderChange
 }: AnalysisPanelProps) {
   const [selectedIndex, setSelectedIndex] = useState('NDVI');
   const [selectedTimeRange, setSelectedTimeRange] = useState('Last Month');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const [startDate, setStartDate] = useState('2025-05-01');
+  const [endDate, setEndDate] = useState('2025-08-06');
   const [showAnalysisTools, setShowAnalysisTools] = useState(true);
   const [activeAnalysisTab, setActiveAnalysisTab] = useState('heatmap');
   const [observationDate, setObservationDate] = useState('2024-01-15');
@@ -44,62 +48,63 @@ export default function AnalysisPanel({
   
   // Enhanced processing states
   const [isProcessingHeatMap, setIsProcessingHeatMap] = useState(false);
+  const [isProcessingTimeSeries, setIsProcessingTimeSeries] = useState(false);
   const [processingProgress, setProcessingProgress] = useState(0);
   const [processingStage, setProcessingStage] = useState('');
   const [processingError, setProcessingError] = useState('');
+  
+  // Time series specific states
+  const [timeSeriesSliderIndex, setTimeSeriesSliderIndex] = useState(0);
+  const [isPlayingTimeSeries, setIsPlayingTimeSeries] = useState(false);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1000); // milliseconds between frames
 
-  // Mock chart data
-  const chartData = [
-    { period: 'Week 1', value: 0.2 },
-    { period: 'Week 2', value: 0.35 },
-    { period: 'Week 3', value: 0.6 },
-    { period: 'Week 4', value: 0.75 },
-    { period: 'Week 5', value: 0.65 },
-    { period: 'Week 6', value: 0.45 },
-    { period: 'Week 7', value: 0.3 }
+  // Set default date range based on current date
+  useEffect(() => {
+    const currentDate = new Date();
+    const threeMonthsAgo = new Date(currentDate.getFullYear(), currentDate.getMonth() - 3, 1);
+    
+    setStartDate(threeMonthsAgo.toISOString().split('T')[0]);
+    setEndDate(currentDate.toISOString().split('T')[0]);
+  }, []);
+
+  const indexOptions = [
+    'NDVI',
+    'EVI', 
+    'SAVI',
+    'NDWI',
+    'GNDVI',
+    'MSAVI',
+    'MSAVI2',
+    'SIPI',
+    'VARI',
+    'ARVI',
+    'RGR',
+    'PSRI',
+    'NDII',
+    'RENDVI',
+    'IRECI',
+    'S2REP',
+    'REB_NDVI1',
+    'NBR',
+    'NDPI',
+    'SCCCI'
   ];
 
-  const maxValue = Math.max(...chartData.map(d => d.value));
-
-const indexOptions = [
-  'NDVI',
-  'EVI',
-  'SAVI',
-  'NDWI',
-  'GNDVI',
-  'MSAVI',
-  'MSAVI2',
-  'SIPI',
-  'VARI',
-  'ARVI',
-  'RGR',
-  'PSRI',
-  'NDII',
-  'RENDVI',
-  'IRECI',
-  'S2REP',
-  'REB_NDVI1',
-  'NBR',
-  'NDPI',
-  'SCCCI'
-];
-
-
-  // Processing stages for heat map generation
-  const processingStages = [
-    'Initializing analysis...',
-    'Fetching satellite data...',
+  // Processing stages for time series generation
+  const timeSeriesProcessingStages = [
+    'Initializing time series analysis...',
+    'Fetching historical satellite data...',
     'Processing vegetation indices...',
-    'Generating heat map tiles...',
-    'Finalizing visualization...'
+    'Generating time series data...',
+    'Preparing visualization...'
   ];
 
   // Function to simulate processing stages
-  const simulateProcessingStages = () => {
+  const simulateTimeSeriesProcessing = () => {
     let currentStage = 0;
     const stageInterval = setInterval(() => {
-      if (currentStage < processingStages.length) {
-        setProcessingStage(processingStages[currentStage]);
+      if (currentStage < timeSeriesProcessingStages.length) {
+        setProcessingStage(timeSeriesProcessingStages[currentStage]);
         setProcessingProgress((currentStage + 1) * 20);
         currentStage++;
       } else {
@@ -124,7 +129,6 @@ const indexOptions = [
       const dates = response.data.dates;
       setObservationDates(dates);
       
-      // Set the most recent date as default
       if (dates && dates.length > 0) {
         setObservationDate(dates[dates.length - 1]);
       }
@@ -143,45 +147,107 @@ const indexOptions = [
     }
   }, [selectedField, fieldGeoJson]);
 
-  // Function to fetch heat map data with enhanced processing UI
+  // Function to fetch time series data
+  const fetchTimeSeriesData = async () => {
+    if (!selectedField || !fieldGeoJson) {
+      console.error('No field selected or geometry missing');
+      return;
+    }
+
+    setIsProcessingTimeSeries(true);
+    setProcessingProgress(0);
+    setProcessingError('');
+    setProcessingStage('Initializing time series analysis...');
+
+    const stageInterval = simulateTimeSeriesProcessing();
+
+    try {
+      const requestData = {
+        start_date: startDate,
+        end_date: endDate,
+        geometry: fieldGeoJson,
+        index: selectedIndex.toLowerCase()
+      };
+
+      console.log('Fetching time series data with params:', requestData);
+
+      const response = await axios.post("https://backend.digisaka.com/api/timeseriesimages/", requestData);
+
+      console.log('Time series response:', response.data);
+      
+      clearInterval(stageInterval);
+      setProcessingProgress(100);
+      setProcessingStage('Time series data loaded successfully!');
+      
+      // Reset slider to first image
+      setTimeSeriesSliderIndex(0);
+      
+      // Pass the time series data to parent component
+      if (onAnalysisRun) {
+        onAnalysisRun('timeseries', {
+          type: 'timeseries',
+          ...response.data,
+          index: selectedIndex,
+          startDate: startDate,
+          endDate: endDate,
+          geometry: fieldGeoJson
+        });
+      }
+      
+      setTimeout(() => {
+        setIsProcessingTimeSeries(false);
+        setProcessingProgress(0);
+        setProcessingStage('');
+      }, 2000);
+      
+    } catch (error) {
+      console.error('Error fetching time series data:', error);
+      
+      clearInterval(stageInterval);
+      setProcessingError('Failed to generate time series. Please try again.');
+      setProcessingStage('Error occurred');
+      setProcessingProgress(0);
+      
+      if (axios.isAxiosError(error)) {
+        console.error('API Error Details:', error.response?.data);
+        setProcessingError(error.response?.data?.message || 'API Error occurred');
+      }
+      
+      setTimeout(() => {
+        setIsProcessingTimeSeries(false);
+        setProcessingError('');
+        setProcessingStage('');
+      }, 5000);
+    }
+  };
+
+  // Function to fetch heat map data
   const fetchHeatMapData = async () => {
     if (!selectedField || !fieldGeoJson) {
       console.error('No field selected or geometry missing');
       return;
     }
 
-    // Reset states
     setIsProcessingHeatMap(true);
     setProcessingProgress(0);
     setProcessingError('');
     setProcessingStage('Initializing analysis...');
 
-    // Start processing stage simulation
-    const stageInterval = simulateProcessingStages();
+    const stageInterval = setInterval(() => {
+      // Simulate progress for heat map
+    }, 1000);
 
     try {
-      console.log('Fetching heat map data with params:', {
-        geometry: fieldGeoJson,
-        observation_date: observationDate,
-        index: selectedIndex.toLowerCase()
-      });
-
       const response = await axios.post("https://backend.digisaka.com/api/indexheatmap/", {
         geometry: fieldGeoJson,
         observation_date: observationDate,
         index: selectedIndex.toLowerCase(),
       });
 
-      console.log('Heat map response:', response.data);
-      
-      // Clear the stage interval
       clearInterval(stageInterval);
-      
-      // Complete the progress
       setProcessingProgress(100);
       setProcessingStage('Heat map generated successfully!');
       
-      // Pass the heat map data to parent component via callback
       if (onAnalysisRun) {
         onAnalysisRun('heatmap', {
           type: 'heatmap',
@@ -195,7 +261,6 @@ const indexOptions = [
         });
       }
       
-      // Reset processing state after a short delay
       setTimeout(() => {
         setIsProcessingHeatMap(false);
         setProcessingProgress(0);
@@ -204,21 +269,9 @@ const indexOptions = [
       
     } catch (error) {
       console.error('Error fetching heat map data:', error);
-      
-      // Clear the stage interval
       clearInterval(stageInterval);
-      
-      // Set error state
       setProcessingError('Failed to generate heat map. Please try again.');
-      setProcessingStage('Error occurred');
-      setProcessingProgress(0);
       
-      if (axios.isAxiosError(error)) {
-        console.error('API Error Details:', error.response?.data);
-        setProcessingError(error.response?.data?.message || 'API Error occurred');
-      }
-      
-      // Reset processing state after showing error
       setTimeout(() => {
         setIsProcessingHeatMap(false);
         setProcessingError('');
@@ -230,6 +283,8 @@ const indexOptions = [
   const handleRunAnalysis = () => {
     if (activeAnalysisTab === 'heatmap') {
       fetchHeatMapData();
+    } else if (activeAnalysisTab === 'timeseries') {
+      fetchTimeSeriesData();
     } else if (onAnalysisRun) {
       const params = {
         index: selectedIndex,
@@ -239,9 +294,56 @@ const indexOptions = [
         timeRange: selectedTimeRange,
         analysisType: activeAnalysisTab
       };
-      onAnalysisRun(params);
+      onAnalysisRun(activeAnalysisTab, params);
     }
   };
+
+  // Handle time series slider change
+  const handleTimeSeriesSliderChange = (index: number) => {
+    if (timeSeriesData && timeSeriesData.results && timeSeriesData.results[index]) {
+      setTimeSeriesSliderIndex(index);
+      if (onTimeSeriesSliderChange) {
+        onTimeSeriesSliderChange(timeSeriesData.results[index]);
+      }
+    }
+  };
+
+  // Auto-play functionality for time series
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    
+    if (isPlayingTimeSeries && timeSeriesData?.results) {
+      interval = setInterval(() => {
+        setTimeSeriesSliderIndex(prev => {
+          const nextIndex = (prev + 1) % timeSeriesData.results.length;
+          handleTimeSeriesSliderChange(nextIndex);
+          return nextIndex;
+        });
+      }, playbackSpeed);
+    }
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isPlayingTimeSeries, playbackSpeed, timeSeriesData]);
+
+  // Create chart data from time series results
+  const createChartData = () => {
+    if (!timeSeriesData?.results) return [];
+    
+    return timeSeriesData.results.map((item: any) => ({
+      date: item.date,
+      value: item.mean_index_value,
+      formattedDate: new Date(item.date).toLocaleDateString('en-US', { 
+        month: 'short', 
+        day: 'numeric' 
+      })
+    }));
+  };
+
+  const chartData = createChartData();
+  const maxValue = chartData.length > 0 ? Math.max(...chartData.map(d => Math.max(d.value, 0))) : 1;
+  const minValue = chartData.length > 0 ? Math.min(...chartData.map(d => Math.min(d.value, 0))) : 0;
 
   return (
     <>
@@ -378,10 +480,6 @@ const indexOptions = [
                       disabled={loadingDates || isProcessingHeatMap}
                     />
                   )}
-                  
-                  {!selectedField && !loadingDates && (
-                    <p className="text-xs text-gray-500 mt-1">Select a field to load observation dates</p>
-                  )}
                 </div>
 
                 {/* Index Selection */}
@@ -402,56 +500,6 @@ const indexOptions = [
                   </div>
                 </div>
 
-                {/* Processing Status */}
-                {isProcessingHeatMap && (
-                  <div className="mb-4 p-4 bg-gray-800 rounded-lg border border-emerald-500/30">
-                    <div className="flex items-center justify-between mb-3">
-                      <h5 className="text-sm font-medium text-emerald-400">Generating Heat Map</h5>
-                      <div className="text-xs text-gray-400">{processingProgress}%</div>
-                    </div>
-                    
-                    {/* Progress Bar */}
-                    <div className="w-full bg-gray-700 rounded-full h-2 mb-3">
-                      <div 
-                        className="bg-gradient-to-r from-emerald-500 to-emerald-400 h-2 rounded-full transition-all duration-500 ease-out relative"
-                        style={{ width: `${processingProgress}%` }}
-                      >
-                        <div className="absolute right-0 top-0 h-full w-4 bg-emerald-300 rounded-full opacity-75 animate-pulse"></div>
-                      </div>
-                    </div>
-                    
-                    {/* Processing Stage */}
-                    <div className="flex items-center text-sm text-gray-300">
-                      <div className="animate-spin h-4 w-4 border border-emerald-400 rounded-full border-t-transparent mr-3"></div>
-                      <span>{processingStage}</span>
-                    </div>
-                    
-                    {/* Processing Animation */}
-                    <div className="mt-3 flex justify-center space-x-1">
-                      {[0, 1, 2, 3, 4].map((i) => (
-                        <div
-                          key={i}
-                          className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"
-                          style={{
-                            animationDelay: `${i * 0.2}s`,
-                            animationDuration: '1s'
-                          }}
-                        ></div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Error State */}
-                {processingError && (
-                  <div className="mb-4 p-3 bg-red-900/20 border border-red-500/30 rounded-lg">
-                    <div className="flex items-center text-red-400">
-                      <i className="ri-error-warning-line mr-2"></i>
-                      <span className="text-sm">{processingError}</span>
-                    </div>
-                  </div>
-                )}
-
                 {/* Generate Button */}
                 <button
                   onClick={handleRunAnalysis}
@@ -469,11 +517,6 @@ const indexOptions = [
                       <div className="animate-spin h-4 w-4 border border-white rounded-full border-t-transparent mr-2"></div>
                       Processing...
                     </>
-                  ) : processing ? (
-                    <>
-                      <div className="animate-spin h-4 w-4 border border-white rounded-full border-t-transparent mr-2"></div>
-                      {processingType || 'Processing...'}
-                    </>
                   ) : (
                     <>
                       <i className="ri-map-2-line mr-2"></i>
@@ -481,16 +524,6 @@ const indexOptions = [
                     </>
                   )}
                 </button>
-
-                {/* Success Message */}
-                {processingProgress === 100 && !processingError && (
-                  <div className="mt-3 p-3 bg-emerald-900/20 border border-emerald-500/30 rounded-lg">
-                    <div className="flex items-center text-emerald-400">
-                      <i className="ri-checkbox-circle-line mr-2"></i>
-                      <span className="text-sm">Heat map generated successfully!</span>
-                    </div>
-                  </div>
-                )}
               </div>
             )}
 
@@ -499,14 +532,6 @@ const indexOptions = [
               <div className="mb-6">
                 <div className="flex items-center justify-between mb-4">
                   <h4 className="text-sm font-medium">Time Series Analysis</h4>
-                  <button 
-                    onClick={handleRunAnalysis}
-                    disabled={processing}
-                    className="text-emerald-400 hover:text-emerald-300 text-xs disabled:text-gray-500"
-                  >
-                    <i className="ri-refresh-line mr-1"></i>
-                    Refresh
-                  </button>
                 </div>
 
                 {/* Index Type */}
@@ -517,6 +542,7 @@ const indexOptions = [
                       value={selectedIndex}
                       onChange={(e) => setSelectedIndex(e.target.value)}
                       className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-sm pr-8 appearance-none"
+                      disabled={isProcessingTimeSeries}
                     >
                       {indexOptions.map((index) => (
                         <option key={index} value={index}>{index}</option>
@@ -535,71 +561,158 @@ const indexOptions = [
                       value={startDate}
                       onChange={(e) => setStartDate(e.target.value)}
                       className="bg-gray-800 border border-gray-600 rounded px-3 py-2 text-sm"
+                      disabled={isProcessingTimeSeries}
                     />
                     <input
                       type="date"
                       value={endDate}
                       onChange={(e) => setEndDate(e.target.value)}
                       className="bg-gray-800 border border-gray-600 rounded px-3 py-2 text-sm"
+                      disabled={isProcessingTimeSeries}
                     />
-                  </div>
-                  
-                  {/* Time range buttons */}
-                  <div className="flex space-x-1 mb-4">
-                    {['Last Week', 'Last Month', 'Last Year'].map((range) => (
-                      <button
-                        key={range}
-                        onClick={() => setSelectedTimeRange(range)}
-                        className={`px-2 py-1 text-xs rounded ${
-                          selectedTimeRange === range 
-                            ? 'bg-emerald-600 text-white' 
-                            : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                        }`}
-                      >
-                        {range}
-                      </button>
-                    ))}
                   </div>
                 </div>
 
-                {/* Chart */}
-                <div className="bg-gray-800 rounded-lg p-4 mb-4">
-                  <div className="h-32 flex items-end space-x-1">
-                    {chartData.map((data, index) => (
-                      <div key={index} className="flex-1 flex flex-col items-center">
-                        <div 
-                          className="w-full bg-emerald-500 rounded-t"
-                          style={{ height: `${(data.value / maxValue) * 100}%` }}
-                        ></div>
-                        <span className="text-xs text-gray-400 mt-1 transform -rotate-45 origin-left">
-                          {data.period}
-                        </span>
+                {/* Processing Status */}
+                {isProcessingTimeSeries && (
+                  <div className="mb-4 p-4 bg-gray-800 rounded-lg border border-emerald-500/30">
+                    <div className="flex items-center justify-between mb-3">
+                      <h5 className="text-sm font-medium text-emerald-400">Generating Time Series</h5>
+                      <div className="text-xs text-gray-400">{processingProgress}%</div>
+                    </div>
+                    
+                    <div className="w-full bg-gray-700 rounded-full h-2 mb-3">
+                      <div 
+                        className="bg-gradient-to-r from-emerald-500 to-emerald-400 h-2 rounded-full transition-all duration-500 ease-out"
+                        style={{ width: `${processingProgress}%` }}
+                      ></div>
+                    </div>
+                    
+                    <div className="flex items-center text-sm text-gray-300">
+                      <div className="animate-spin h-4 w-4 border border-emerald-400 rounded-full border-t-transparent mr-3"></div>
+                      <span>{processingStage}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Error State */}
+                {processingError && (
+                  <div className="mb-4 p-3 bg-red-900/20 border border-red-500/30 rounded-lg">
+                    <div className="flex items-center text-red-400">
+                      <i className="ri-error-warning-line mr-2"></i>
+                      <span className="text-sm">{processingError}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Time Series Chart */}
+                {chartData.length > 0 && (
+                  <div className="mb-6 bg-gray-800 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <h5 className="text-sm font-medium text-emerald-400">
+                        {selectedIndex} Time Series
+                      </h5>
+                      <div className="text-xs text-gray-400">
+                        {chartData.length} observations
                       </div>
-                    ))}
+                    </div>
+                    
+                    {/* Chart Area */}
+                    <div className="h-32 flex items-end space-x-1 relative">
+                      {chartData.map((data, index) => {
+                        const normalizedValue = maxValue > minValue 
+                          ? ((data.value - minValue) / (maxValue - minValue)) * 100
+                          : 50;
+                        
+                        const isSelected = index === timeSeriesSliderIndex;
+                        
+                        return (
+                          <div 
+                            key={index} 
+                            className="flex-1 flex flex-col items-center cursor-pointer group"
+                            onClick={() => handleTimeSeriesSliderChange(index)}
+                          >
+                            <div 
+                              className={`w-full rounded-t transition-all duration-200 ${
+                                isSelected 
+                                  ? 'bg-yellow-400 shadow-lg' 
+                                  : 'bg-emerald-500 group-hover:bg-emerald-400'
+                              }`}
+                              style={{ height: `${Math.max(normalizedValue, 3)}%` }}
+                            ></div>
+                            <span className="text-xs text-gray-400 mt-1 transform -rotate-45 origin-left truncate">
+                              {data.formattedDate}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    
+                    {/* Y-axis labels */}
+                    <div className="flex justify-between text-xs text-gray-400 mt-2">
+                      <span>{minValue.toFixed(2)}</span>
+                      <span>{((minValue + maxValue) / 2).toFixed(2)}</span>
+                      <span>{maxValue.toFixed(2)}</span>
+                    </div>
+
+                    {/* Current value display */}
+                    {timeSeriesData?.results?.[timeSeriesSliderIndex] && (
+                      <div className="mt-3 p-2 bg-gray-700 rounded text-center">
+                        <div className="text-sm font-medium text-yellow-400">
+                          {new Date(timeSeriesData.results[timeSeriesSliderIndex].date).toLocaleDateString()}
+                        </div>
+                        <div className="text-lg font-bold text-white">
+                          {timeSeriesData.results[timeSeriesSliderIndex].mean_index_value.toFixed(3)}
+                        </div>
+                        <div className="text-xs text-gray-400">Mean {selectedIndex} Value</div>
+                      </div>
+                    )}
+
+                    {/* Playback Controls */}
+                    <div className="mt-4 flex items-center justify-center space-x-3">
+                      <button
+                        onClick={() => setIsPlayingTimeSeries(!isPlayingTimeSeries)}
+                        className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 rounded text-sm flex items-center"
+                      >
+                        <i className={`ri-${isPlayingTimeSeries ? 'pause' : 'play'}-line mr-1`}></i>
+                        {isPlayingTimeSeries ? 'Pause' : 'Play'}
+                      </button>
+                      
+                      <select
+                        value={playbackSpeed}
+                        onChange={(e) => setPlaybackSpeed(Number(e.target.value))}
+                        className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs"
+                      >
+                        <option value={2000}>0.5x</option>
+                        <option value={1000}>1x</option>
+                        <option value={500}>2x</option>
+                        <option value={250}>4x</option>
+                      </select>
+                    </div>
                   </div>
-                  
-                  {/* Y-axis labels */}
-                  <div className="flex justify-between text-xs text-gray-400 mt-2">
-                    <span>0</span>
-                    <span>0.2</span>
-                    <span>0.4</span>
-                    <span>0.6</span>
-                    <span>0.8</span>
-                  </div>
-                </div>
+                )}
 
                 <button
                   onClick={handleRunAnalysis}
-                  disabled={!selectedField || processing}
-                  className="w-full px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-700 disabled:cursor-not-allowed rounded text-sm font-medium transition-colors flex items-center justify-center mb-4"
+                  disabled={!selectedField || processing || isProcessingTimeSeries}
+                  className={`w-full px-4 py-2 rounded text-sm font-medium transition-colors flex items-center justify-center mb-4 ${
+                    isProcessingTimeSeries
+                      ? 'bg-emerald-600/50 cursor-not-allowed'
+                      : !selectedField || processing
+                      ? 'bg-gray-700 cursor-not-allowed'
+                      : 'bg-emerald-600 hover:bg-emerald-700'
+                  }`}
                 >
-                  {processing ? (
+                  {isProcessingTimeSeries ? (
                     <>
                       <div className="animate-spin h-4 w-4 border border-white rounded-full border-t-transparent mr-2"></div>
-                      {processingType || 'Analyzing...'}
+                      Processing...
                     </>
                   ) : (
-                    'Run Time Series Analysis'
+                    <>
+                      <i className="ri-line-chart-line mr-2"></i>
+                      Generate Time Series
+                    </>
                   )}
                 </button>
               </div>
@@ -716,7 +829,7 @@ const indexOptions = [
               <div className="mb-6 p-3 bg-gray-800 rounded-lg">
                 <h4 className="text-sm font-medium mb-2">Analysis Results</h4>
                 <div className="text-xs text-gray-400 space-y-1">
-                  <div>Current NDVI: {analysisResults.ndvi || '0.65'}</div>
+                  <div>Current {selectedIndex}: {analysisResults.ndvi || '0.65'}</div>
                   <div>Health Status: {analysisResults.healthStatus || 'Good'}</div>
                   <div>Last Updated: {analysisResults.lastUpdated || '2 hours ago'}</div>
                 </div>
