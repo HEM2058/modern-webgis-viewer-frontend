@@ -19,6 +19,14 @@ interface AnalysisPanelProps {
   onTimeSeriesSliderChange?: (imageData: any) => void;
 }
 
+interface ReportData {
+  fieldInfo: any;
+  timeSeriesData: any;
+  selectedIndices: string[];
+  analysisDate: string;
+  reportType: string;
+}
+
 export default function AnalysisPanel({ 
   isOpen, 
   onToggle, 
@@ -36,7 +44,7 @@ export default function AnalysisPanel({
   timeSeriesData,
   onTimeSeriesSliderChange
 }: AnalysisPanelProps) {
-  const [selectedIndex, setSelectedIndex] = useState('NDVI');
+  const [selectedIndex, setSelectedIndex] = useState('ndvi');
   const [selectedTimeRange, setSelectedTimeRange] = useState('Last Month');
   const [startDate, setStartDate] = useState('2025-05-01');
   const [endDate, setEndDate] = useState('2025-08-06');
@@ -45,6 +53,13 @@ export default function AnalysisPanel({
   const [observationDate, setObservationDate] = useState('2024-01-15');
   const [observationDates, setObservationDates] = useState<string[]>([]);
   const [loadingDates, setLoadingDates] = useState(false);
+  
+  // Report states
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [selectedReportType, setSelectedReportType] = useState('Field Health Report');
+  const [selectedReportIndices, setSelectedReportIndices] = useState(['ndvi']);
+  const [reportData, setReportData] = useState<ReportData | null>(null);
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
   
   // Enhanced processing states
   const [isProcessingHeatMap, setIsProcessingHeatMap] = useState(false);
@@ -56,7 +71,51 @@ export default function AnalysisPanel({
   // Time series specific states
   const [timeSeriesSliderIndex, setTimeSeriesSliderIndex] = useState(0);
   const [isPlayingTimeSeries, setIsPlayingTimeSeries] = useState(false);
-  const [playbackSpeed, setPlaybackSpeed] = useState(1000); // milliseconds between frames
+  const [playbackSpeed, setPlaybackSpeed] = useState(1000);
+
+  // Heat map index options with descriptions
+  const heatMapIndexOptions = [
+    { value: 'ndvi', label: 'NDVI (Normalized Difference Vegetation Index)' },
+    { value: 'evi', label: 'EVI (Enhanced Vegetation Index)' },
+    { value: 'msavi2', label: 'MSAVI2 (Modified Soil Adjusted Vegetation Index 2)' },
+    { value: 'sipi', label: 'SIPI (Structure Insensitive Pigment Index)' },
+    { value: 'savi', label: 'SAVI (Soil-Adjusted Vegetation Index)' },
+    { value: 'vari', label: 'VARI (Visible Atmospherically Resistant Index)' },
+    { value: 'arvi', label: 'ARVI (Atmospherically Resistant Vegetation Index)' },
+    { value: 'rgr', label: 'RGR (Ratio of Red to Green Reflectance)' },
+    { value: 'psri', label: 'PSRI (Plant Senescence Reflectance Index)' },
+    { value: 'ndii', label: 'NDII (Normalized Difference Infrared Index)' },
+    { value: 'rendvi', label: 'RENDVI (Red-Edge NDVI)' },
+    { value: 'ireci', label: 'IRECI (Inverted Red-Edge Chlorophyll Index)' },
+    { value: 's2rep', label: 'S2REP (Sentinel-2 Red Edge Position)' },
+    { value: 'reb_ndvi1', label: 'REB NDVI1 (Red-Edge NDVI1)' },
+    { value: 'nbr', label: 'Normalized Burn Ratio' },
+    { value: 'ndpi', label: 'Normalized Difference Polarization Index' },
+    { value: 'sccci', label: 'SCCCI' }
+  ];
+
+  // Time series index options with descriptions
+  const timeSeriesIndexOptions = [
+    { value: 'ndvi', label: 'NDVI (Normalized Difference Vegetation Index)' },
+    { value: 'evi', label: 'EVI (Enhanced Vegetation Index)' },
+    { value: 'msavi2', label: 'MSAVI2 (Modified Soil Adjusted Vegetation Index 2)' },
+    { value: 'sipi', label: 'SIPI (Structure Insensitive Pigment Index)' },
+    { value: 'savi', label: 'SAVI (Soil-Adjusted Vegetation Index)' },
+    { value: 'vari', label: 'VARI (Visible Atmospherically Resistant Index)' },
+    { value: 'arvi', label: 'ARVI (Atmospherically Resistant Vegetation Index)' },
+    { value: 'rgr', label: 'RGR (Ratio of Red to Green Reflectance)' },
+    { value: 'psri', label: 'PSRI (Plant Senescence Reflectance Index)' },
+    { value: 'ndii', label: 'NDII (Normalized Difference Infrared Index)' },
+    { value: 'rendvi', label: 'RENDVI (Red-Edge NDVI)' },
+    { value: 'ireci', label: 'IRECI (Inverted Red-Edge Chlorophyll Index)' },
+    { value: 's2rep', label: 'S2REP (Sentinel-2 Red Edge Position)' },
+    { value: 'reb_ndvi1', label: 'REB NDVI1 (Red-Edge NDVI1)' },
+    { value: 'rvi', label: 'RADAR Vegetative Index' },
+    { value: 'vhi', label: 'Vegetation Health Index' },
+    { value: 'nbr', label: 'Normalized Burn Ratio' },
+    { value: 'ndpi', label: 'Normalized Difference Polarization Index' },
+    { value: 'sccci', label: 'SCCCI' }
+  ];
 
   // Set default date range based on current date
   useEffect(() => {
@@ -66,29 +125,6 @@ export default function AnalysisPanel({
     setStartDate(threeMonthsAgo.toISOString().split('T')[0]);
     setEndDate(currentDate.toISOString().split('T')[0]);
   }, []);
-
-  const indexOptions = [
-    'NDVI',
-    'EVI', 
-    'SAVI',
-    'NDWI',
-    'GNDVI',
-    'MSAVI',
-    'MSAVI2',
-    'SIPI',
-    'VARI',
-    'ARVI',
-    'RGR',
-    'PSRI',
-    'NDII',
-    'RENDVI',
-    'IRECI',
-    'S2REP',
-    'REB_NDVI1',
-    'NBR',
-    'NDPI',
-    'SCCCI'
-  ];
 
   // Processing stages for time series generation
   const timeSeriesProcessingStages = [
@@ -280,11 +316,54 @@ export default function AnalysisPanel({
     }
   };
 
+  // Function to generate report data
+  const generateReport = async () => {
+    if (!selectedField || !fieldGeoJson) {
+      console.error('No field selected for report generation');
+      return;
+    }
+
+    setIsGeneratingReport(true);
+
+    try {
+      // Fetch time series data for all selected indices
+      const reportTimeSeriesData = {};
+      
+      for (const index of selectedReportIndices) {
+        const response = await axios.post("https://backend.digisaka.com/api/timeseriesimages/", {
+          start_date: startDate,
+          end_date: endDate,
+          geometry: fieldGeoJson,
+          index: index.toLowerCase()
+        });
+        reportTimeSeriesData[index] = response.data;
+      }
+
+      const report: ReportData = {
+        fieldInfo: selectedField,
+        timeSeriesData: reportTimeSeriesData,
+        selectedIndices: selectedReportIndices,
+        analysisDate: new Date().toISOString(),
+        reportType: selectedReportType
+      };
+
+      setReportData(report);
+      setShowReportModal(true);
+      
+    } catch (error) {
+      console.error('Error generating report:', error);
+    } finally {
+      setIsGeneratingReport(false);
+    }
+  };
+
   const handleRunAnalysis = () => {
     if (activeAnalysisTab === 'heatmap') {
       fetchHeatMapData();
     } else if (activeAnalysisTab === 'timeseries') {
       fetchTimeSeriesData();
+    } else if (activeAnalysisTab === 'report') {
+      generateReport();
     } else if (onAnalysisRun) {
       const params = {
         index: selectedIndex,
@@ -341,6 +420,75 @@ export default function AnalysisPanel({
     }));
   };
 
+  // Handle multiple indices selection for report
+  const handleReportIndexChange = (index: string) => {
+    setSelectedReportIndices(prev => 
+      prev.includes(index) 
+        ? prev.filter(i => i !== index)
+        : [...prev, index]
+    );
+  };
+
+  // Export report as PDF
+  const exportReportAsPDF = () => {
+    if (!reportData) return;
+
+    // Create a new window with the report content for printing
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const reportHTML = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>${reportData.reportType} - ${reportData.fieldInfo.farm_name}</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            .header { text-align: center; margin-bottom: 30px; }
+            .field-info { background: #f5f5f5; padding: 15px; margin-bottom: 20px; }
+            .chart-container { margin: 20px 0; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+            th { background-color: #f2f2f2; }
+            @media print { 
+              body { margin: 0; }
+              .no-print { display: none; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>${reportData.reportType}</h1>
+            <h2>${reportData.fieldInfo.farm_name}</h2>
+            <p>Generated on: ${new Date(reportData.analysisDate).toLocaleDateString()}</p>
+          </div>
+          
+          <div class="field-info">
+            <h3>Field Information</h3>
+            <p><strong>Farm ID:</strong> ${reportData.fieldInfo.farm_id}</p>
+            <p><strong>Farm Name:</strong> ${reportData.fieldInfo.farm_name}</p>
+            <p><strong>Analysis Period:</strong> ${startDate} to ${endDate}</p>
+            <p><strong>Indices Analyzed:</strong> ${reportData.selectedIndices.join(', ').toUpperCase()}</p>
+          </div>
+          
+          <div class="chart-container">
+            <h3>Time Series Analysis Summary</h3>
+            <p>Detailed time series charts and analysis data would be rendered here in a full implementation.</p>
+          </div>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(reportHTML);
+    printWindow.document.close();
+    
+    // Wait for content to load then print
+    setTimeout(() => {
+      printWindow.print();
+      printWindow.close();
+    }, 500);
+  };
+
   const chartData = createChartData();
   const maxValue = chartData.length > 0 ? Math.max(...chartData.map(d => Math.max(d.value, 0))) : 1;
   const minValue = chartData.length > 0 ? Math.min(...chartData.map(d => Math.min(d.value, 0))) : 0;
@@ -356,9 +504,9 @@ export default function AnalysisPanel({
       )}
       
       {/* Analysis Panel */}
-  <div className={`fixed right-0 top-0 h-full w-full sm:w-96 bg-gray-900 text-white transform transition-transform duration-300 z-50 ${
-  isOpen ? 'translate-x-0' : 'translate-x-full'
-} lg:relative lg:translate-x-0 lg:block overflow-y-auto`}>
+      <div className={`fixed right-0 top-0 h-full w-full sm:w-96 bg-gray-900 text-white transform transition-transform duration-300 z-50 ${
+        isOpen ? 'translate-x-0' : 'translate-x-full'
+      } lg:relative lg:translate-x-0 lg:block overflow-y-auto`}>
         {/* Header */}
         <div className="p-4 border-b border-gray-700 flex items-center justify-between">
           <button
@@ -491,8 +639,8 @@ export default function AnalysisPanel({
                       className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-sm pr-8 appearance-none"
                       disabled={isProcessingHeatMap}
                     >
-                      {indexOptions.map((index) => (
-                        <option key={index} value={index}>{index}</option>
+                      {heatMapIndexOptions.map((index) => (
+                        <option key={index.value} value={index.value}>{index.label}</option>
                       ))}
                     </select>
                     <i className="ri-arrow-down-s-line absolute right-2 top-2.5 text-gray-400 pointer-events-none"></i>
@@ -543,8 +691,8 @@ export default function AnalysisPanel({
                       className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-sm pr-8 appearance-none"
                       disabled={isProcessingTimeSeries}
                     >
-                      {indexOptions.map((index) => (
-                        <option key={index} value={index}>{index}</option>
+                      {timeSeriesIndexOptions.map((index) => (
+                        <option key={index.value} value={index.value}>{index.label}</option>
                       ))}
                     </select>
                     <i className="ri-arrow-down-s-line absolute right-2 top-2.5 text-gray-400 pointer-events-none"></i>
@@ -604,189 +752,188 @@ export default function AnalysisPanel({
                   </div>
                 )}
 
-{/* Time Series Line Chart */}
-{chartData.length > 0 && (
-  <div className="mb-6 bg-gray-800 rounded-lg p-6 border border-gray-700">
-    <div className="flex items-center justify-between mb-6">
-      <h5 className="text-sm font-medium text-gray-200">
-        {selectedIndex} (Normalized Difference Vegetation Index)
-      </h5>
-      <div className="text-xs text-gray-400">
-        {chartData.length} observations
-      </div>
-    </div>
-    
-    {/* Chart Container */}
-    <div className="relative" style={{ height: '300px', width: '100%' }}>
-      <svg width="100%" height="100%" viewBox="0 0 500 300" className="overflow-visible">
-        {/* Chart background */}
-        <rect width="450" height="250" x="40" y="20" fill="#1f2937" stroke="none"/>
-        
-        {/* Horizontal grid lines */}
-        {[0, 0.2, 0.4, 0.6, 0.8, 1].map((ratio, index) => {
-          const y = 270 - (ratio * 250);
-          const value = minValue + (maxValue - minValue) * ratio;
-          return (
-            <g key={index}>
-              <line 
-                x1="40" 
-                y1={y} 
-                x2="490" 
-                y2={y} 
-                stroke="#374151" 
-                strokeWidth="1"
-              />
-              <text
-                x="35"
-                y={y + 3}
-                fill="#9ca3af"
-                fontSize="10"
-                textAnchor="end"
-              >
-                {value.toFixed(2)}
-              </text>
-            </g>
-          );
-        })}
-        
-        {/* Chart line */}
-        <path
-          d={chartData.map((data, index) => {
-            const x = 40 + (index / (chartData.length - 1)) * 450;
-            const normalizedValue = maxValue > minValue 
-              ? ((data.value - minValue) / (maxValue - minValue))
-              : 0.5;
-            const y = 270 - (normalizedValue * 250);
-            return `${index === 0 ? 'M' : 'L'} ${x} ${y}`;
-          }).join(' ')}
-          fill="none"
-          stroke="#3b82f6"
-          strokeWidth="2"
-        />
-        
-        {/* Data points */}
-        {chartData.map((data, index) => {
-          const x = 40 + (index / (chartData.length - 1)) * 450;
-          const normalizedValue = maxValue > minValue 
-            ? ((data.value - minValue) / (maxValue - minValue))
-            : 0.5;
-          const y = 270 - (normalizedValue * 250);
-          const isSelected = index === timeSeriesSliderIndex;
-          
-          return (
-            <circle
-              key={index}
-              cx={x}
-              cy={y}
-              r={isSelected ? "5" : "4"}
-              fill={isSelected ? "#dc2626" : "#3b82f6"}
-              stroke="#1f2937"
-              strokeWidth="2"
-              className="cursor-pointer transition-all duration-200"
-              onClick={() => handleTimeSeriesSliderChange(index)}
-            />
-          );
-        })}
-        
-        {/* X-axis */}
-        <line x1="40" y1="270" x2="490" y2="270" stroke="#9ca3af" strokeWidth="1"/>
-        
-        {/* X-axis labels */}
-        {chartData.map((data, index) => {
-          if (index % Math.max(1, Math.floor(chartData.length / 6)) === 0 || index === chartData.length - 1) {
-            const x = 40 + (index / (chartData.length - 1)) * 450;
-            return (
-              <text
-                key={index}
-                x={x}
-                y="290"
-                fill="#9ca3af"
-                fontSize="10"
-                textAnchor="middle"
-                transform={`rotate(-45, ${x}, 290)`}
-              >
-                {data.date}
-              </text>
-            );
-          }
-          return null;
-        })}
-        
-        {/* Y-axis */}
-        <line x1="40" y1="20" x2="40" y2="270" stroke="#9ca3af" strokeWidth="1"/>
-      </svg>
-    </div>
+                {/* Time Series Line Chart */}
+                {chartData.length > 0 && (
+                  <div className="mb-6 bg-gray-800 rounded-lg p-6 border border-gray-700">
+                    <div className="flex items-center justify-between mb-6">
+                      <h5 className="text-sm font-medium text-gray-200">
+                        {selectedIndex.toUpperCase()} Time Series
+                      </h5>
+                      <div className="text-xs text-gray-400">
+                        {chartData.length} observations
+                      </div>
+                    </div>
+                    
+                    {/* Chart Container */}
+                    <div className="relative" style={{ height: '300px', width: '100%' }}>
+                      <svg width="100%" height="100%" viewBox="0 0 500 300" className="overflow-visible">
+                        {/* Chart background */}
+                        <rect width="450" height="250" x="40" y="20" fill="#1f2937" stroke="none"/>
+                        
+                        {/* Horizontal grid lines */}
+                        {[0, 0.2, 0.4, 0.6, 0.8, 1].map((ratio, index) => {
+                          const y = 270 - (ratio * 250);
+                          const value = minValue + (maxValue - minValue) * ratio;
+                          return (
+                            <g key={index}>
+                              <line 
+                                x1="40" 
+                                y1={y} 
+                                x2="490" 
+                                y2={y} 
+                                stroke="#374151" 
+                                strokeWidth="1"
+                              />
+                              <text
+                                x="35"
+                                y={y + 3}
+                                fill="#9ca3af"
+                                fontSize="10"
+                                textAnchor="end"
+                              >
+                                {value.toFixed(2)}
+                              </text>
+                            </g>
+                          );
+                        })}
+                        
+                        {/* Chart line */}
+                        <path
+                          d={chartData.map((data, index) => {
+                            const x = 40 + (index / (chartData.length - 1)) * 450;
+                            const normalizedValue = maxValue > minValue 
+                              ? ((data.value - minValue) / (maxValue - minValue))
+                              : 0.5;
+                            const y = 270 - (normalizedValue * 250);
+                            return `${index === 0 ? 'M' : 'L'} ${x} ${y}`;
+                          }).join(' ')}
+                          fill="none"
+                          stroke="#3b82f6"
+                          strokeWidth="2"
+                        />
+                        
+                        {/* Data points */}
+                        {chartData.map((data, index) => {
+                          const x = 40 + (index / (chartData.length - 1)) * 450;
+                          const normalizedValue = maxValue > minValue 
+                            ? ((data.value - minValue) / (maxValue - minValue))
+                            : 0.5;
+                          const y = 270 - (normalizedValue * 250);
+                          const isSelected = index === timeSeriesSliderIndex;
+                          
+                          return (
+                            <circle
+                              key={index}
+                              cx={x}
+                              cy={y}
+                              r={isSelected ? "5" : "4"}
+                              fill={isSelected ? "#dc2626" : "#3b82f6"}
+                              stroke="#1f2937"
+                              strokeWidth="2"
+                              className="cursor-pointer transition-all duration-200"
+                              onClick={() => handleTimeSeriesSliderChange(index)}
+                            />
+                          );
+                        })}
+                        
+                        {/* X-axis */}
+                        <line x1="40" y1="270" x2="490" y2="270" stroke="#9ca3af" strokeWidth="1"/>
+                        
+                        {/* X-axis labels */}
+                        {chartData.map((data, index) => {
+                          if (index % Math.max(1, Math.floor(chartData.length / 6)) === 0 || index === chartData.length - 1) {
+                            const x = 40 + (index / (chartData.length - 1)) * 450;
+                            return (
+                              <text
+                                key={index}
+                                x={x}
+                                y="290"
+                                fill="#9ca3af"
+                                fontSize="10"
+                                textAnchor="middle"
+                                transform={`rotate(-45, ${x}, 290)`}
+                              >
+                                {data.date}
+                              </text>
+                            );
+                          }
+                          return null;
+                        })}
+                        
+                        {/* Y-axis */}
+                        <line x1="40" y1="20" x2="40" y2="270" stroke="#9ca3af" strokeWidth="1"/>
+                      </svg>
+                    </div>
 
-    
-    {/* Current value display */}
-    {timeSeriesData?.results?.[timeSeriesSliderIndex] && (
-      <div className="mt-6 p-4 bg-gray-700 rounded-lg border border-gray-600">
-        <div className="flex justify-between items-center">
-          <div>
-            <div className="text-sm font-medium text-gray-200">
-              {new Date(timeSeriesData.results[timeSeriesSliderIndex].date).toLocaleDateString('en-US', {
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric'
-              })}
-            </div>
-            <div className="text-xl font-bold text-blue-400">
-              {timeSeriesData.results[timeSeriesSliderIndex].mean_index_value.toFixed(3)}
-            </div>
-            <div className="text-xs text-gray-400">Mean {selectedIndex} Value</div>
-          </div>
-          
-          <div className="text-right">
-            <div className="text-xs text-gray-400">Observation</div>
-            <div className="text-sm font-medium text-gray-200">
-              {timeSeriesSliderIndex + 1} of {chartData.length}
-            </div>
-          </div>
-        </div>
-        
-        {/* Trend indicator */}
-        {timeSeriesSliderIndex > 0 && (
-          <div className="mt-3 pt-3 border-t border-gray-600">
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-gray-400">Change from previous:</span>
-              <div className={`flex items-center ${
-                timeSeriesData.results[timeSeriesSliderIndex].mean_index_value > 
-                timeSeriesData.results[timeSeriesSliderIndex - 1].mean_index_value 
-                  ? 'text-green-400' : 'text-red-400'
-              }`}>
-                <i className={`ri-arrow-${
-                  timeSeriesData.results[timeSeriesSliderIndex].mean_index_value > 
-                  timeSeriesData.results[timeSeriesSliderIndex - 1].mean_index_value 
-                    ? 'up' : 'down'
-                }-line mr-1`}></i>
-                {Math.abs(
-                  timeSeriesData.results[timeSeriesSliderIndex].mean_index_value - 
-                  timeSeriesData.results[timeSeriesSliderIndex - 1].mean_index_value
-                ).toFixed(4)}
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    )}
-    
-    {/* Navigation slider */}
-    <div className="mt-4">
-      <input
-        type="range"
-        min="0"
-        max={chartData.length - 1}
-        value={timeSeriesSliderIndex}
-        onChange={(e) => handleTimeSeriesSliderChange(Number(e.target.value))}
-        className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer slider-dark"
-      />
-      <div className="flex justify-between text-xs text-gray-400 mt-1">
-        <span>Start</span>
-        <span>End</span>
-      </div>
-    </div>
-  </div>
-)}
+                    {/* Current value display */}
+                    {timeSeriesData?.results?.[timeSeriesSliderIndex] && (
+                      <div className="mt-6 p-4 bg-gray-700 rounded-lg border border-gray-600">
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <div className="text-sm font-medium text-gray-200">
+                              {new Date(timeSeriesData.results[timeSeriesSliderIndex].date).toLocaleDateString('en-US', {
+                                year: 'numeric',
+                                month: 'long',
+                                day: 'numeric'
+                              })}
+                            </div>
+                            <div className="text-xl font-bold text-blue-400">
+                              {timeSeriesData.results[timeSeriesSliderIndex].mean_index_value.toFixed(3)}
+                            </div>
+                            <div className="text-xs text-gray-400">Mean {selectedIndex.toUpperCase()} Value</div>
+                          </div>
+                          
+                          <div className="text-right">
+                            <div className="text-xs text-gray-400">Observation</div>
+                            <div className="text-sm font-medium text-gray-200">
+                              {timeSeriesSliderIndex + 1} of {chartData.length}
+                            </div>
+                          </div>
+                        </div>
+                        
+                        {/* Trend indicator */}
+                        {timeSeriesSliderIndex > 0 && (
+                          <div className="mt-3 pt-3 border-t border-gray-600">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="text-gray-400">Change from previous:</span>
+                              <div className={`flex items-center ${
+                                timeSeriesData.results[timeSeriesSliderIndex].mean_index_value > 
+                                timeSeriesData.results[timeSeriesSliderIndex - 1].mean_index_value 
+                                  ? 'text-green-400' : 'text-red-400'
+                              }`}>
+                                <i className={`ri-arrow-${
+                                  timeSeriesData.results[timeSeriesSliderIndex].mean_index_value > 
+                                  timeSeriesData.results[timeSeriesSliderIndex - 1].mean_index_value 
+                                    ? 'up' : 'down'
+                                }-line mr-1`}></i>
+                                {Math.abs(
+                                  timeSeriesData.results[timeSeriesSliderIndex].mean_index_value - 
+                                  timeSeriesData.results[timeSeriesSliderIndex - 1].mean_index_value
+                                ).toFixed(4)}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    
+                    {/* Navigation slider */}
+                    <div className="mt-4">
+                      <input
+                        type="range"
+                        min="0"
+                        max={chartData.length - 1}
+                        value={timeSeriesSliderIndex}
+                        onChange={(e) => handleTimeSeriesSliderChange(Number(e.target.value))}
+                        className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer slider-dark"
+                      />
+                      <div className="flex justify-between text-xs text-gray-400 mt-1">
+                        <span>Start</span>
+                        <span>End</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <button
                   onClick={handleRunAnalysis}
@@ -819,19 +966,21 @@ export default function AnalysisPanel({
               <div className="mb-6">
                 <h4 className="text-sm font-medium mb-4">Generate Report</h4>
                 
-                {/* Report Type */}
+    
+
+                {/* Indices Selection for Report */}
                 <div className="mb-4">
-                  <label className="block text-xs text-gray-300 mb-2">Report Type</label>
-                  <div className="space-y-2">
-                    {['Field Health Report', 'Yield Prediction Report', 'Comprehensive Analysis'].map((type) => (
-                      <label key={type} className="flex items-center">
+                  <label className="block text-xs text-gray-300 mb-2">Select Indices for Analysis</label>
+                  <div className="max-h-32 overflow-y-auto space-y-1">
+                    {timeSeriesIndexOptions.slice(0, 10).map((index) => (
+                      <label key={index.value} className="flex items-center">
                         <input
-                          type="radio"
-                          name="reportType"
-                          value={type}
+                          type="checkbox"
+                          checked={selectedReportIndices.includes(index.value)}
+                          onChange={() => handleReportIndexChange(index.value)}
                           className="mr-2 text-emerald-600"
                         />
-                        <span className="text-sm">{type}</span>
+                        <span className="text-xs">{index.label}</span>
                       </label>
                     ))}
                   </div>
@@ -860,13 +1009,13 @@ export default function AnalysisPanel({
 
                 <button
                   onClick={handleRunAnalysis}
-                  disabled={!selectedField || processing}
+                  disabled={!selectedField || processing || isGeneratingReport || selectedReportIndices.length === 0}
                   className="w-full px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-700 disabled:cursor-not-allowed rounded text-sm font-medium transition-colors flex items-center justify-center"
                 >
-                  {processing ? (
+                  {isGeneratingReport ? (
                     <>
                       <div className="animate-spin h-4 w-4 border border-white rounded-full border-t-transparent mr-2"></div>
-                      {processingType || 'Generating...'}
+                      Generating Report...
                     </>
                   ) : (
                     <>
@@ -900,32 +1049,12 @@ export default function AnalysisPanel({
               </div>
             </div>
 
-            {/* Color palette */}
-            <div className="mb-6">
-              <h4 className="text-sm font-medium mb-3">Color Palette</h4>
-              <div className="flex space-x-2">
-                {[
-                  'bg-yellow-400',
-                  'bg-blue-400', 
-                  'bg-orange-400',
-                  'bg-purple-400'
-                ].map((color, index) => (
-                  <div key={index} className="flex items-center space-x-1">
-                    <div className={`w-6 h-6 rounded ${color} cursor-pointer hover:scale-110 transition-transform`}></div>
-                  </div>
-                ))}
-                <button className="w-6 h-6 border-2 border-dashed border-gray-500 rounded flex items-center justify-center hover:border-gray-400">
-                  <i className="ri-add-line text-gray-400 text-sm"></i>
-                </button>
-              </div>
-            </div>
-
             {/* Results Section */}
             {analysisResults && (
               <div className="mb-6 p-3 bg-gray-800 rounded-lg">
                 <h4 className="text-sm font-medium mb-2">Analysis Results</h4>
                 <div className="text-xs text-gray-400 space-y-1">
-                  <div>Current {selectedIndex}: {analysisResults.ndvi || '0.65'}</div>
+                  <div>Current {selectedIndex.toUpperCase()}: {analysisResults.ndvi || '0.65'}</div>
                   <div>Health Status: {analysisResults.healthStatus || 'Good'}</div>
                   <div>Last Updated: {analysisResults.lastUpdated || '2 hours ago'}</div>
                 </div>
@@ -941,6 +1070,194 @@ export default function AnalysisPanel({
           </div>
         )}
       </div>
+
+      {/* Report Modal */}
+      {showReportModal && reportData && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <div>
+                <h2 className="text-xl font-semibold text-gray-800">{reportData.reportType}</h2>
+                <p className="text-sm text-gray-600">Generated on {new Date(reportData.analysisDate).toLocaleDateString()}</p>
+              </div>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={exportReportAsPDF}
+                  className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 flex items-center text-sm"
+                >
+                  <i className="ri-download-line mr-2"></i>
+                  Export PDF
+                </button>
+                <button
+                  onClick={() => setShowReportModal(false)}
+                  className="p-2 text-gray-400 hover:text-gray-600 rounded-lg"
+                >
+                  <i className="ri-close-line text-xl"></i>
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6">
+              {/* Field Information Section */}
+              <div className="mb-8">
+                <h3 className="text-lg font-semibold text-gray-800 mb-4">Field Information</h3>
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="text-xs font-medium text-gray-600">Farm Name</label>
+                      <p className="text-sm font-semibold text-gray-800">{reportData.fieldInfo.farm_name}</p>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-gray-600">Farm ID</label>
+                      <p className="text-sm font-semibold text-gray-800">{reportData.fieldInfo.farm_id}</p>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-gray-600">Analysis Period</label>
+                      <p className="text-sm font-semibold text-gray-800">{startDate} to {endDate}</p>
+                    </div>
+                    <div className="md:col-span-3">
+                      <label className="text-xs font-medium text-gray-600">Indices Analyzed</label>
+                      <p className="text-sm font-semibold text-gray-800">
+                        {reportData.selectedIndices.map(index => index.toUpperCase()).join(', ')}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Field Map Placeholder */}
+              <div className="mb-8">
+                <h3 className="text-lg font-semibold text-gray-800 mb-4">Field Location</h3>
+                <div className="bg-gray-100 rounded-lg h-64 flex items-center justify-center">
+                  <div className="text-center">
+                    <i className="ri-map-2-line text-4xl text-gray-400 mb-2"></i>
+                    <p className="text-gray-500">Field boundary map would be displayed here</p>
+                    <p className="text-xs text-gray-400">Interactive map showing field boundaries and location</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Time Series Charts */}
+              <div className="mb-8">
+                <h3 className="text-lg font-semibold text-gray-800 mb-4">Time Series Analysis</h3>
+                
+                {/* Sample Chart for Each Selected Index */}
+                {reportData.selectedIndices.slice(0, 3).map((indexKey) => {
+                  const indexData = reportData.timeSeriesData[indexKey];
+                  if (!indexData?.results) return null;
+
+                  const chartData = indexData.results.map((item: any) => ({
+                    date: item.date,
+                    value: item.mean_index_value
+                  }));
+
+                  const maxVal = Math.max(...chartData.map(d => d.value));
+                  const minVal = Math.min(...chartData.map(d => d.value));
+
+                  return (
+                    <div key={indexKey} className="mb-6 bg-gray-50 rounded-lg p-6">
+                      <h4 className="text-md font-medium text-gray-800 mb-4">
+                        {indexKey.toUpperCase()} Time Series
+                      </h4>
+                      
+                      {/* Simple SVG Chart */}
+                      <div className="relative h-64 bg-white rounded border">
+                        <svg width="100%" height="100%" viewBox="0 0 600 250" className="overflow-visible">
+                          {/* Grid lines */}
+                          {[0, 0.25, 0.5, 0.75, 1].map((ratio, index) => {
+                            const y = 220 - (ratio * 180);
+                            const value = minVal + (maxVal - minVal) * ratio;
+                            return (
+                              <g key={index}>
+                                <line x1="60" y1={y} x2="580" y2={y} stroke="#e5e7eb" strokeWidth="1"/>
+                                <text x="55" y={y + 3} fill="#6b7280" fontSize="12" textAnchor="end">
+                                  {value.toFixed(2)}
+                                </text>
+                              </g>
+                            );
+                          })}
+                          
+                          {/* Chart line */}
+                          <path
+                            d={chartData.map((data, index) => {
+                              const x = 60 + (index / (chartData.length - 1)) * 520;
+                              const normalizedValue = maxVal > minVal 
+                                ? ((data.value - minVal) / (maxVal - minVal))
+                                : 0.5;
+                              const y = 220 - (normalizedValue * 180);
+                              return `${index === 0 ? 'M' : 'L'} ${x} ${y}`;
+                            }).join(' ')}
+                            fill="none"
+                            stroke="#10b981"
+                            strokeWidth="2"
+                          />
+                          
+                          {/* Data points */}
+                          {chartData.map((data, index) => {
+                            const x = 60 + (index / (chartData.length - 1)) * 520;
+                            const normalizedValue = maxVal > minVal 
+                              ? ((data.value - minVal) / (maxVal - minVal))
+                              : 0.5;
+                            const y = 220 - (normalizedValue * 180);
+                            
+                            return (
+                              <circle
+                                key={index}
+                                cx={x}
+                                cy={y}
+                                r="3"
+                                fill="#10b981"
+                                stroke="white"
+                                strokeWidth="2"
+                              />
+                            );
+                          })}
+                          
+                          {/* Axes */}
+                          <line x1="60" y1="40" x2="60" y2="220" stroke="#6b7280" strokeWidth="1"/>
+                          <line x1="60" y1="220" x2="580" y2="220" stroke="#6b7280" strokeWidth="1"/>
+                        </svg>
+                      </div>
+
+                      {/* Summary Statistics */}
+                      <div className="mt-4 grid grid-cols-3 gap-4">
+                        <div className="text-center">
+                          <p className="text-xs text-gray-600">Average</p>
+                          <p className="text-lg font-semibold text-emerald-600">
+                            {(chartData.reduce((sum, d) => sum + d.value, 0) / chartData.length).toFixed(3)}
+                          </p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-xs text-gray-600">Maximum</p>
+                          <p className="text-lg font-semibold text-blue-600">{maxVal.toFixed(3)}</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-xs text-gray-600">Minimum</p>
+                          <p className="text-lg font-semibold text-orange-600">{minVal.toFixed(3)}</p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Report Summary */}
+              <div className="mb-6">
+                <h3 className="text-lg font-semibold text-gray-800 mb-4">Analysis Summary</h3>
+                <div className="bg-blue-50 rounded-lg p-4">
+                  <p className="text-sm text-gray-700">
+                    This {reportData.reportType.toLowerCase()} provides comprehensive analysis of {reportData.fieldInfo.farm_name} 
+                    using {reportData.selectedIndices.length} vegetation indices over the period from {startDate} to {endDate}. 
+                    The analysis includes time series visualization, statistical summaries, and field boundary mapping.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
