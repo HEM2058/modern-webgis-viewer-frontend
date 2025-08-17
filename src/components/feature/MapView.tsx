@@ -26,7 +26,7 @@ import { useLayerControls } from './MapUtils/hooks/useLayerControls';
 import {
   getCurrentAnalysisInfo,
   getVisualizationParams
-} from './MapUtils/utils/mapUtils';
+} from './MapUtils/utils/MapUtils';
 
 interface MapViewProps {
   selectedField?: any;
