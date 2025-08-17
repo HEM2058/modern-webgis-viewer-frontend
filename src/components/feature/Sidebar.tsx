@@ -6,7 +6,18 @@ interface SidebarProps {
   isOpen: boolean;
   onToggle: () => void;
   onFieldSelect?: (field: any) => void;
+  onDeleteField?: (fieldId: any) => void;
   onAnalysisPanelToggle?: () => void;
+  selectedField?: any;
+  selectedFieldId?: any;
+  
+  // Drawing mode props
+  isDrawingMode?: boolean;
+  onDrawingModeToggle?: (isDrawing: boolean) => void;
+  drawnField?: any;
+  onSaveDemoField?: () => void;
+  onDeleteDemoField?: () => void;
+  
   // Optional props for field interactions
   showData?: boolean;
   monitoringFieldId?: any;
@@ -21,14 +32,25 @@ interface SidebarProps {
   handleGetIndexMapForDrawedField?: (fieldId: any) => void;
   setProcessingFieldId?: (fieldId: any) => void;
   setProcessingType?: (type: string) => void;
-  selectedFieldId?: any; // Add this prop to track selected field
 }
 
 export default function Sidebar({ 
   isOpen, 
   onToggle,
   onFieldSelect,
+  onDeleteField,
   onAnalysisPanelToggle,
+  selectedField,
+  selectedFieldId,
+  
+  // Drawing mode props
+  isDrawingMode = false,
+  onDrawingModeToggle,
+  drawnField,
+  onSaveDemoField,
+  onDeleteDemoField,
+  
+  // Optional props
   showData,
   monitoringFieldId,
   indexData,
@@ -41,8 +63,7 @@ export default function Sidebar({
   handleCloseAnalysis = () => {},
   handleGetIndexMapForDrawedField = () => {},
   setProcessingFieldId = () => {},
-  setProcessingType = () => {},
-  selectedFieldId = null
+  setProcessingType = () => {}
 }: SidebarProps) {
   // Main section toggle - 'fields' or 'layers'
   const [activeSection, setActiveSection] = useState<'fields' | 'layers'>('fields');
@@ -50,7 +71,6 @@ export default function Sidebar({
   const [activeLayer, setActiveLayer] = useState('projected-yield');
   const [uploadedFiles, setUploadedFiles] = useState<string[]>([]);
   const [showAllFields, setShowAllFields] = useState(false);
-  const [isDrawingMode, setIsDrawingMode] = useState(false);
   
   // Replace mock filters with real API-based filtering
   const [provinces, setProvinces] = useState<any[]>([]);
@@ -67,7 +87,6 @@ export default function Sidebar({
   const [fieldToDelete, setFieldToDelete] = useState<any>(null);
   const [showCropCalendar, setShowCropCalendar] = useState(false);
   const [showCropReport, setShowCropReport] = useState(false);
-  const [selectedField, setSelectedField] = useState<any>(null);
   const [fields, setFields] = useState<any[]>([]);
   
   const mapLayers = [
@@ -184,11 +203,14 @@ export default function Sidebar({
     fetchFields();
   }, [selectedProvince, dateFilter, setFields]);
 
+  // Create combined fields list with drawn field at top if it exists
+  const allFields = drawnField ? [drawnField, ...fields] : fields;
+
   // Pagination calculations
-  const totalPages = Math.ceil(fields.length / fieldsPerPage);
+  const totalPages = Math.ceil(allFields.length / fieldsPerPage);
   const indexOfLastField = currentPage * fieldsPerPage;
   const indexOfFirstField = indexOfLastField - fieldsPerPage;
-  const currentFields = showAllFields ? fields : fields.slice(indexOfFirstField, indexOfLastField);
+  const currentFields = showAllFields ? allFields : allFields.slice(indexOfFirstField, indexOfLastField);
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
@@ -232,8 +254,19 @@ export default function Sidebar({
 
   const confirmDeleteField = async () => {
     try {
-      await axios.delete(`https://digisaka.app/api/mobile/explorer-fields/${fieldToDelete}`);
-      setFields(fields.filter((field: any) => field.farm_id !== fieldToDelete));
+      if (fieldToDelete === 'demo_field') {
+        // Handle demo field deletion
+        if (onDeleteDemoField) {
+          onDeleteDemoField();
+        }
+      } else {
+        // Handle regular field deletion
+        await axios.delete(`https://digisaka.app/api/mobile/explorer-fields/${fieldToDelete}`);
+        setFields(fields.filter((field: any) => field.farm_id !== fieldToDelete));
+        if (onDeleteField) {
+          onDeleteField(fieldToDelete);
+        }
+      }
       closeDeleteModal();
     } catch (error) {
       console.error("Error deleting field:", error);
@@ -256,8 +289,10 @@ export default function Sidebar({
   };
 
   const handleDrawFieldToggle = () => {
-    setIsDrawingMode(!isDrawingMode);
-    // You can add additional logic here to enable/disable drawing mode on the map
+    const newDrawingMode = !isDrawingMode;
+    if (onDrawingModeToggle) {
+      onDrawingModeToggle(newDrawingMode);
+    }
   };
 
   return (
@@ -358,7 +393,7 @@ export default function Sidebar({
               <div>
                 <div className="flex items-center justify-between mb-3">
                   <h4 className="text-sm font-medium">Saved Fields</h4>
-                  <span className="text-xs text-gray-400">({fields.length})</span>
+                  <span className="text-xs text-gray-400">({allFields.length})</span>
                   <button 
                     onClick={() => setShowAllFields(!showAllFields)}
                     className="text-xs text-emerald-400 hover:text-emerald-300 cursor-pointer whitespace-nowrap"
@@ -367,51 +402,53 @@ export default function Sidebar({
                   </button>
                 </div>
 
-                {/* Filter Controls */}
-                <div className="mb-4 space-y-2">
-                  <div>
-                    <label className="block text-xs text-gray-400 mb-1">Filter by Province</label>
-                    <div className="relative">
-                      <select 
-                        value={selectedProvince}
-                        onChange={(e) => {
-                          setSelectedProvince(e.target.value);
-                          setCurrentPage(1);
-                        }}
-                        className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-xs pr-8 appearance-none"
-                      >
-                        <option value="all">All Provinces</option>
-                        {provinces.map((province) => (
-                          <option key={province.province_id} value={province.province_id}>
-                            {province.province_name}
-                          </option>
-                        ))}
-                      </select>
-                      <i className="ri-arrow-down-s-line absolute right-2 top-2 text-gray-400 pointer-events-none"></i>
+                {/* Filter Controls - only show if no demo field or when showing all */}
+                {!drawnField && (
+                  <div className="mb-4 space-y-2">
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">Filter by Province</label>
+                      <div className="relative">
+                        <select 
+                          value={selectedProvince}
+                          onChange={(e) => {
+                            setSelectedProvince(e.target.value);
+                            setCurrentPage(1);
+                          }}
+                          className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-xs pr-8 appearance-none"
+                        >
+                          <option value="all">All Provinces</option>
+                          {provinces.map((province) => (
+                            <option key={province.province_id} value={province.province_id}>
+                              {province.province_name}
+                            </option>
+                          ))}
+                        </select>
+                        <i className="ri-arrow-down-s-line absolute right-2 top-2 text-gray-400 pointer-events-none"></i>
+                      </div>
                     </div>
-                  </div>
 
-                  <div>
-                    <label className="block text-xs text-gray-400 mb-1">Filter by Date Added</label>
-                    <div className="relative">
-                      <select 
-                        value={dateFilter || ''}
-                        onChange={(e) => {
-                          setDateFilter(e.target.value || null);
-                          setCurrentPage(1);
-                        }}
-                        className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-xs pr-8 appearance-none"
-                      >
-                        {dateFilterOptions.map((option) => (
-                          <option key={option.value || 'all'} value={option.value || ''}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                      <i className="ri-arrow-down-s-line absolute right-2 top-2 text-gray-400 pointer-events-none"></i>
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">Filter by Date Added</label>
+                      <div className="relative">
+                        <select 
+                          value={dateFilter || ''}
+                          onChange={(e) => {
+                            setDateFilter(e.target.value || null);
+                            setCurrentPage(1);
+                          }}
+                          className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-xs pr-8 appearance-none"
+                        >
+                          {dateFilterOptions.map((option) => (
+                            <option key={option.value || 'all'} value={option.value || ''}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                        <i className="ri-arrow-down-s-line absolute right-2 top-2 text-gray-400 pointer-events-none"></i>
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
                 
                 {isLoading ? (
                   <div className="flex justify-center items-center h-40">
@@ -423,12 +460,17 @@ export default function Sidebar({
                       {currentFields.length > 0 ? (
                         currentFields.map((field) => {
                           const isSelected = isFieldSelected(field);
+                          const isDemoField = field.isDemo;
+                          const isUnsaved = field.isUnsaved;
+                          
                           return (
                             <div 
                               key={field.farm_id} 
                               className={`relative rounded-lg p-3 cursor-pointer transition-all duration-200 ${
                                 isSelected 
                                   ? 'bg-gradient-to-r from-emerald-600 to-emerald-700 shadow-lg shadow-emerald-500/20 transform scale-[1.02] border-2 border-emerald-400' 
+                                  : isDemoField
+                                  ? 'bg-gradient-to-r from-blue-800 to-blue-700 hover:from-blue-700 hover:to-blue-600'
                                   : 'bg-gray-800 hover:bg-gray-700'
                               }`}
                               onClick={() => handleFieldClick(field)}
@@ -442,6 +484,13 @@ export default function Sidebar({
                                   <div className="absolute inset-0 bg-emerald-400 rounded-lg opacity-10 animate-pulse"></div>
                                 </>
                               )}
+
+                              {/* Demo field indicator */}
+                              {isDemoField && !isSelected && (
+                                <div className="absolute -top-1 -right-1 w-4 h-4 bg-blue-400 rounded-full flex items-center justify-center">
+                                  <i className="ri-pencil-line text-xs text-gray-900"></i>
+                                </div>
+                              )}
                               
                               <div className="relative z-10">
                                 <div className="flex items-center justify-between mb-2">
@@ -454,17 +503,29 @@ export default function Sidebar({
                                         ACTIVE
                                       </span>
                                     )}
+                                    {isDemoField && !isSelected && (
+                                      <span className="ml-2 text-xs bg-blue-400 text-gray-900 px-2 py-0.5 rounded-full font-medium">
+                                        DEMO
+                                      </span>
+                                    )}
                                   </span>
                                   <div className="flex items-center space-x-2">
+                                    {/* Unsaved flag */}
+                                    {isUnsaved && (
+                                      <span className="text-xs text-yellow-400 flex items-center">
+                                        <i className="ri-save-line mr-1"></i>
+                                        Unsaved
+                                      </span>
+                                    )}
                                     <span className={`text-xs whitespace-nowrap ${
-                                      isSelected ? 'text-emerald-100' : 'text-emerald-400'
+                                      isSelected ? 'text-emerald-100' : isDemoField ? 'text-blue-100' : 'text-emerald-400'
                                     }`}>
                                       ID: {field.farm_id}
                                     </span>
                                   </div>
                                 </div>
                                 
-                                {field.ndvi_map_notification && (
+                                {field.ndvi_map_notification && !isDemoField && (
                                   <div className={`flex items-center text-xs mb-1 ${
                                     isSelected ? 'text-yellow-300' : 'text-yellow-400'
                                   }`}>
@@ -474,13 +535,51 @@ export default function Sidebar({
                                 )}
                                 
                                 <div className={`text-xs ${
-                                  isSelected ? 'text-emerald-100' : 'text-gray-400'
+                                  isSelected 
+                                    ? 'text-emerald-100' 
+                                    : isDemoField 
+                                    ? 'text-blue-200' 
+                                    : 'text-gray-400'
                                 }`}>
-                                  {isSelected ? 'Currently analyzing this field' : 'Click to analyze this field'}
+                                  {isSelected 
+                                    ? 'Currently analyzing this field' 
+                                    : isDemoField
+                                    ? 'Demo field - click to analyze'
+                                    : 'Click to analyze this field'
+                                  }
                                 </div>
                                 
+                                {/* Demo field actions */}
+                                {isDemoField && (
+                                  <div className="mt-2 pt-2 border-t border-blue-500/30">
+                                    <div className="flex items-center justify-between space-x-2">
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (onSaveDemoField) {
+                                            onSaveDemoField();
+                                          }
+                                        }}
+                                        className="flex-1 text-xs bg-blue-500 hover:bg-blue-400 text-white px-2 py-1 rounded flex items-center justify-center"
+                                      >
+                                        <i className="ri-save-line mr-1"></i>
+                                        Save Field
+                                      </button>
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          openDeleteModal('demo_field');
+                                        }}
+                                        className="text-xs bg-red-600 hover:bg-red-500 text-white px-2 py-1 rounded flex items-center justify-center"
+                                      >
+                                        <i className="ri-delete-bin-line"></i>
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+                                
                                 {/* Additional selected field info */}
-                                {isSelected && (
+                                {isSelected && !isDemoField && (
                                   <div className="mt-2 pt-2 border-t border-emerald-500/30">
                                     <div className="flex items-center justify-between text-xs">
                                       <span className="text-emerald-100">Status:</span>
@@ -500,7 +599,7 @@ export default function Sidebar({
                     </div>
 
                     {/* Pagination Controls */}
-                    {!showAllFields && fields.length > fieldsPerPage && (
+                    {!showAllFields && allFields.length > fieldsPerPage && (
                       <div className="flex justify-center items-center mt-4 space-x-2">
                         <button
                           onClick={handlePrevPage}
@@ -615,6 +714,37 @@ export default function Sidebar({
           )}
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-96">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              {fieldToDelete === 'demo_field' ? 'Delete Demo Field?' : 'Delete Field?'}
+            </h3>
+            <p className="text-gray-600 mb-6">
+              {fieldToDelete === 'demo_field' 
+                ? 'This will remove the demo field from the map. This action cannot be undone.'
+                : 'This will permanently delete this field. This action cannot be undone.'
+              }
+            </p>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={closeDeleteModal}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteField}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
