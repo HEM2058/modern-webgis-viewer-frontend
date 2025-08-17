@@ -27,6 +27,264 @@ interface ReportData {
   reportType: string;
 }
 
+// CropCalendar Component integrated within the file
+const CropCalendar = ({ fieldId }: { fieldId: string }) => {
+  const [geojsonData, setGeojsonData] = useState(null);
+  const [timeSeriesData, setTimeSeriesData] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const [field] = useState({
+    crop_type: 'Rice',
+    planting_date: '2023-12-09',
+    harvesting_date: '2024-04-07'
+  });
+
+  const cropStages = {
+    Rice: [
+      { name: 'Seedling', day: 10 },
+      { name: 'Tillering', day: 30 },
+      { name: 'Panicle Initiation', day: 55 },
+      { name: 'Booting', day: 75 },
+      { name: 'Heading', day: 90 },
+      { name: 'Flowering', day: 95 },
+      { name: 'Maturity', day: 120 }
+    ]
+  };
+
+  useEffect(() => {
+    if (!fieldId) return;
+
+    setLoading(true);
+    axios
+      .get(`https://digisaka.app/api/mobile/explorer-fields/${fieldId}`)
+      .then(response => {
+        const geojson = response.data.data.features[0];
+        setGeojsonData(geojson);
+      })
+      .catch(error => {
+        console.error('Error fetching GeoJSON:', error);
+        setLoading(false);
+      });
+  }, [fieldId]);
+
+  useEffect(() => {
+    if (!geojsonData || !field.planting_date) return;
+
+    const fetchTimeSeries = async () => {
+      setLoading(true);
+
+      const startDate = field.planting_date;
+      const endDate = field.harvesting_date;
+
+      const requestData = {
+        start_date: startDate,
+        end_date: endDate,
+        geometry: geojsonData,
+      };
+
+      try {
+        const res = await axios.post(
+          'https://backend.digisaka.com/api/timeseriesgraph/',
+          requestData
+        );
+        setTimeSeriesData(res.data.results || []);
+      } catch (err) {
+        console.error('Error fetching time series:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTimeSeries();
+  }, [geojsonData, field]);
+
+  if (loading) {
+    return (
+      <div className="p-6 bg-gray-800 rounded-lg">
+        <div className="flex items-center justify-center py-12">
+          <div className="animate-spin h-8 w-8 border border-emerald-400 rounded-full border-t-transparent mr-3"></div>
+          <span className="text-gray-300">Loading crop calendar data...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!timeSeriesData.length) {
+    return (
+      <div className="p-6 bg-gray-800 rounded-lg">
+        <div className="text-center py-8">
+          <i className="ri-plant-line text-4xl text-gray-400 mb-4"></i>
+          <p className="text-gray-400">No crop calendar data available</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Parse dates and calculate days after planting
+  const parseDate = (dateStr: string) => new Date(dateStr);
+  const plantingDate = parseDate(field.planting_date);
+  
+  const processedData = timeSeriesData.map((d: any) => ({
+    date: d.date,
+    daysAfterPlanting: Math.floor((parseDate(d.date).getTime() - plantingDate.getTime()) / (1000 * 60 * 60 * 24)),
+    mean: d.mean_index,
+  }));
+
+  // Simple SVG chart dimensions
+  const chartWidth = 100;
+  const chartHeight = 60;
+  const maxDays = Math.max(...processedData.map(d => d.daysAfterPlanting));
+  const maxValue = Math.max(...processedData.map(d => d.mean));
+  const minValue = Math.min(...processedData.map(d => d.mean));
+
+  return (
+    <div className="p-6 bg-gray-800 rounded-lg">
+      <div className="mb-4">
+        <h4 className="text-lg font-semibold text-white mb-2">Crop Calendar</h4>
+        <div className="grid grid-cols-2 gap-4 text-sm">
+          <div>
+            <span className="text-gray-400">Crop Type:</span>
+            <span className="text-white font-medium ml-2">{field.crop_type}</span>
+          </div>
+          <div>
+            <span className="text-gray-400">Planting Date:</span>
+            <span className="text-white font-medium ml-2">{field.planting_date}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* NDVI Chart */}
+      <div className="mb-6 p-4 bg-gray-700 rounded-lg">
+        <h5 className="text-sm font-medium text-gray-200 mb-4">NDVI Progress Over Growing Season</h5>
+        
+        <div className="relative h-48 bg-gray-600 rounded">
+          <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth} ${chartHeight}`} className="overflow-visible">
+            {/* Background grid */}
+            {[0, 0.25, 0.5, 0.75, 1].map((ratio, index) => {
+              const y = chartHeight - 5 - (ratio * (chartHeight - 10));
+              return (
+                <line 
+                  key={index}
+                  x1="10" 
+                  y1={y} 
+                  x2={chartWidth - 10} 
+                  y2={y} 
+                  stroke="#4b5563" 
+                  strokeWidth="0.5"
+                />
+              );
+            })}
+            
+            {/* Chart line */}
+            <path
+              d={processedData.map((data, index) => {
+                const x = 10 + ((data.daysAfterPlanting / maxDays) * (chartWidth - 20));
+                const normalizedValue = maxValue > minValue 
+                  ? ((data.mean - minValue) / (maxValue - minValue))
+                  : 0.5;
+                const y = (chartHeight - 5) - (normalizedValue * (chartHeight - 10));
+                return `${index === 0 ? 'M' : 'L'} ${x} ${y}`;
+              }).join(' ')}
+              fill="none"
+              stroke="#10b981"
+              strokeWidth="1"
+            />
+            
+            {/* Data points */}
+            {processedData.map((data, index) => {
+              const x = 10 + ((data.daysAfterPlanting / maxDays) * (chartWidth - 20));
+              const normalizedValue = maxValue > minValue 
+                ? ((data.mean - minValue) / (maxValue - minValue))
+                : 0.5;
+              const y = (chartHeight - 5) - (normalizedValue * (chartHeight - 10));
+              
+              return (
+                <circle
+                  key={index}
+                  cx={x}
+                  cy={y}
+                  r="1"
+                  fill="#3b82f6"
+                />
+              );
+            })}
+          </svg>
+        </div>
+
+        {/* Chart stats */}
+        <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-center">
+          <div>
+            <div className="text-gray-400">Current NDVI</div>
+            <div className="text-emerald-400 font-semibold">
+              {processedData[processedData.length - 1]?.mean?.toFixed(2) || 'N/A'}
+            </div>
+          </div>
+          <div>
+            <div className="text-gray-400">Days After Planting</div>
+            <div className="text-blue-400 font-semibold">
+              {processedData[processedData.length - 1]?.daysAfterPlanting || 'N/A'}
+            </div>
+          </div>
+          <div>
+            <div className="text-gray-400">Peak NDVI</div>
+            <div className="text-yellow-400 font-semibold">{maxValue.toFixed(2)}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Growth Stages */}
+      <div className="mb-4">
+        <h5 className="text-sm font-medium text-gray-200 mb-3">Growth Stages</h5>
+        <div className="space-y-2">
+          {cropStages[field.crop_type]?.map((stage, index) => {
+            const currentDays = processedData[processedData.length - 1]?.daysAfterPlanting || 0;
+            const isCompleted = currentDays >= stage.day;
+            const isCurrent = currentDays >= (cropStages[field.crop_type][index - 1]?.day || 0) && currentDays < stage.day;
+            
+            return (
+              <div 
+                key={index} 
+                className={`flex items-center justify-between p-2 rounded text-sm ${
+                  isCurrent 
+                    ? 'bg-emerald-600 text-white' 
+                    : isCompleted 
+                      ? 'bg-gray-600 text-gray-300' 
+                      : 'bg-gray-700 text-gray-400'
+                }`}
+              >
+                <div className="flex items-center">
+                  <div className={`w-2 h-2 rounded-full mr-3 ${
+                    isCurrent 
+                      ? 'bg-white' 
+                      : isCompleted 
+                        ? 'bg-emerald-400' 
+                        : 'bg-gray-500'
+                  }`}></div>
+                  <span>{stage.name}</span>
+                </div>
+                <div className="text-xs">
+                  {stage.day} days
+                  {isCurrent && <span className="ml-2 text-yellow-300">(Current)</span>}
+                  {isCompleted && <span className="ml-2 text-emerald-300">✓</span>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Summary */}
+      <div className="p-3 bg-gray-700 rounded-lg">
+        <div className="text-xs text-gray-400 space-y-1">
+          <div>Growing Season: {maxDays} days total</div>
+          <div>Harvest Date: {field.harvesting_date}</div>
+          <div>Data Points: {processedData.length} observations</div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function AnalysisPanel({ 
   isOpen, 
   onToggle, 
@@ -64,6 +322,7 @@ export default function AnalysisPanel({
   // Enhanced processing states
   const [isProcessingHeatMap, setIsProcessingHeatMap] = useState(false);
   const [isProcessingTimeSeries, setIsProcessingTimeSeries] = useState(false);
+  const [isProcessingCropCalendar, setIsProcessingCropCalendar] = useState(false);
   const [processingProgress, setProcessingProgress] = useState(0);
   const [processingStage, setProcessingStage] = useState('');
   const [processingError, setProcessingError] = useState('');
@@ -135,12 +394,37 @@ export default function AnalysisPanel({
     'Preparing visualization...'
   ];
 
+  // Processing stages for crop calendar
+  const cropCalendarProcessingStages = [
+    'Initializing crop calendar analysis...',
+    'Fetching field geometry data...',
+    'Processing growing season data...',
+    'Calculating growth stages...',
+    'Preparing crop calendar visualization...'
+  ];
+
   // Function to simulate processing stages
   const simulateTimeSeriesProcessing = () => {
     let currentStage = 0;
     const stageInterval = setInterval(() => {
       if (currentStage < timeSeriesProcessingStages.length) {
         setProcessingStage(timeSeriesProcessingStages[currentStage]);
+        setProcessingProgress((currentStage + 1) * 20);
+        currentStage++;
+      } else {
+        clearInterval(stageInterval);
+      }
+    }, 1000);
+
+    return stageInterval;
+  };
+
+  // Function to simulate crop calendar processing
+  const simulateCropCalendarProcessing = () => {
+    let currentStage = 0;
+    const stageInterval = setInterval(() => {
+      if (currentStage < cropCalendarProcessingStages.length) {
+        setProcessingStage(cropCalendarProcessingStages[currentStage]);
         setProcessingProgress((currentStage + 1) * 20);
         currentStage++;
       } else {
@@ -182,6 +466,50 @@ export default function AnalysisPanel({
       fetchObservationDates(fieldGeoJson);
     }
   }, [selectedField, fieldGeoJson]);
+
+  // Function to process crop calendar
+  const processCropCalendar = async () => {
+    if (!selectedField) {
+      console.error('No field selected');
+      return;
+    }
+
+    setIsProcessingCropCalendar(true);
+    setProcessingProgress(0);
+    setProcessingError('');
+    setProcessingStage('Initializing crop calendar analysis...');
+
+    const stageInterval = simulateCropCalendarProcessing();
+
+    try {
+      // Simulate the processing time for crop calendar
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      
+      clearInterval(stageInterval);
+      setProcessingProgress(100);
+      setProcessingStage('Crop calendar loaded successfully!');
+      
+      setTimeout(() => {
+        setIsProcessingCropCalendar(false);
+        setProcessingProgress(0);
+        setProcessingStage('');
+      }, 2000);
+      
+    } catch (error) {
+      console.error('Error processing crop calendar:', error);
+      
+      clearInterval(stageInterval);
+      setProcessingError('Failed to load crop calendar. Please try again.');
+      setProcessingStage('Error occurred');
+      setProcessingProgress(0);
+      
+      setTimeout(() => {
+        setIsProcessingCropCalendar(false);
+        setProcessingError('');
+        setProcessingStage('');
+      }, 5000);
+    }
+  };
 
   // Function to fetch time series data
   const fetchTimeSeriesData = async () => {
@@ -364,6 +692,8 @@ export default function AnalysisPanel({
       fetchTimeSeriesData();
     } else if (activeAnalysisTab === 'report') {
       generateReport();
+    } else if (activeAnalysisTab === 'cropcalendar') {
+      processCropCalendar();
     } else if (onAnalysisRun) {
       const params = {
         index: selectedIndex,
@@ -548,7 +878,7 @@ export default function AnalysisPanel({
 
             {/* Analysis Type Tabs */}
             <div className="mb-6">
-              <div className="flex space-x-1 mb-4">
+              <div className="flex space-x-1 mb-4 flex-wrap">
                 <button
                   onClick={() => setActiveAnalysisTab('heatmap')}
                   className={`px-3 py-2 text-xs rounded ${
@@ -568,6 +898,17 @@ export default function AnalysisPanel({
                   }`}
                 >
                   Time Series
+                </button>
+                <button
+                  onClick={() => setActiveAnalysisTab('cropcalendar')}
+                  className={`px-3 py-2 text-xs rounded ${
+                    activeAnalysisTab === 'cropcalendar' 
+                      ? 'bg-emerald-600 text-white' 
+                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  }`}
+                >
+                  <i className="ri-calendar-line mr-1"></i>
+                  Crop Calendar
                 </button>
                 <button
                   onClick={() => setActiveAnalysisTab('report')}
@@ -961,13 +1302,80 @@ export default function AnalysisPanel({
               </div>
             )}
 
+            {/* Crop Calendar Analysis */}
+            {activeAnalysisTab === 'cropcalendar' && (
+              <div className="mb-6">
+                <h4 className="text-sm font-medium mb-4">Crop Calendar</h4>
+                
+                {/* Processing Status */}
+                {isProcessingCropCalendar && (
+                  <div className="mb-4 p-4 bg-gray-800 rounded-lg border border-emerald-500/30">
+                    <div className="flex items-center justify-between mb-3">
+                      <h5 className="text-sm font-medium text-emerald-400">Loading Crop Calendar</h5>
+                      <div className="text-xs text-gray-400">{processingProgress}%</div>
+                    </div>
+                    
+                    <div className="w-full bg-gray-700 rounded-full h-2 mb-3">
+                      <div 
+                        className="bg-gradient-to-r from-emerald-500 to-emerald-400 h-2 rounded-full transition-all duration-500 ease-out"
+                        style={{ width: `${processingProgress}%` }}
+                      ></div>
+                    </div>
+                    
+                    <div className="flex items-center text-sm text-gray-300">
+                      <div className="animate-spin h-4 w-4 border border-emerald-400 rounded-full border-t-transparent mr-3"></div>
+                      <span>{processingStage}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Error State */}
+                {processingError && (
+                  <div className="mb-4 p-3 bg-red-900/20 border border-red-500/30 rounded-lg">
+                    <div className="flex items-center text-red-400">
+                      <i className="ri-error-warning-line mr-2"></i>
+                      <span className="text-sm">{processingError}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Generate Button */}
+                <button
+                  onClick={handleRunAnalysis}
+                  disabled={!selectedField || processing || isProcessingCropCalendar}
+                  className={`w-full px-4 py-2 rounded text-sm font-medium transition-all duration-300 flex items-center justify-center mb-4 ${
+                    isProcessingCropCalendar
+                      ? 'bg-emerald-600/50 cursor-not-allowed'
+                      : !selectedField || processing
+                      ? 'bg-gray-700 cursor-not-allowed'
+                      : 'bg-emerald-600 hover:bg-emerald-700 transform hover:scale-[1.02]'
+                  }`}
+                >
+                  {isProcessingCropCalendar ? (
+                    <>
+                      <div className="animate-spin h-4 w-4 border border-white rounded-full border-t-transparent mr-2"></div>
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <i className="ri-calendar-line mr-2"></i>
+                      Load Crop Calendar
+                    </>
+                  )}
+                </button>
+
+                {/* Crop Calendar Component */}
+                {!isProcessingCropCalendar && !processingError && selectedField && (
+                  <CropCalendar fieldId={selectedField.farm_id} />
+                )}
+              </div>
+            )}
+
             {/* Report Generation */}
             {activeAnalysisTab === 'report' && (
               <div className="mb-6">
                 <h4 className="text-sm font-medium mb-4">Generate Report</h4>
                 
-    
-
                 {/* Indices Selection for Report */}
                 <div className="mb-4">
                   <label className="block text-xs text-gray-300 mb-2">Select Indices for Analysis</label>
@@ -1027,39 +1435,7 @@ export default function AnalysisPanel({
               </div>
             )}
 
-            {/* Field Management Tools */}
-            <div className="mb-6">
-              <h4 className="text-sm font-medium mb-4">Field Management</h4>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={onZoomToField}
-                  disabled={!selectedField}
-                  className="px-3 py-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:cursor-not-allowed rounded text-xs font-medium transition-colors flex items-center justify-center"
-                >
-                  <i className="ri-search-line mr-1"></i>
-                  Zoom to Field
-                </button>
-                <button
-                  disabled={!selectedField}
-                  className="px-3 py-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:cursor-not-allowed rounded text-xs font-medium transition-colors flex items-center justify-center"
-                >
-                  <i className="ri-calendar-line mr-1"></i>
-                  Crop Calendar
-                </button>
-              </div>
-            </div>
 
-            {/* Results Section */}
-            {analysisResults && (
-              <div className="mb-6 p-3 bg-gray-800 rounded-lg">
-                <h4 className="text-sm font-medium mb-2">Analysis Results</h4>
-                <div className="text-xs text-gray-400 space-y-1">
-                  <div>Current {selectedIndex.toUpperCase()}: {analysisResults.ndvi || '0.65'}</div>
-                  <div>Health Status: {analysisResults.healthStatus || 'Good'}</div>
-                  <div>Last Updated: {analysisResults.lastUpdated || '2 hours ago'}</div>
-                </div>
-              </div>
-            )}
           </div>
         )}
 
