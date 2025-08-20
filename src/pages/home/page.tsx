@@ -3,7 +3,28 @@ import axios from 'axios';
 import Sidebar from '../../components/feature/Sidebar';
 import AnalysisPanel from '../../components/feature/AnalysisPanel';
 import MapView from '../../components/feature/MapView';
+import { useWMSLayers } from '../../components/feature/MapUtils/hooks/useWMSLayers';
+import type { WMSLayerData } from '../../components/feature/MapUtils/hooks/useWMSLayers';
 import logo from "../../assets/logo.png";
+
+// Sample WMS date arrays - Replace with actual API data
+const wmsDateArrays: WMSLayerData = {
+  ndvi: [
+    '2024-01-01', '2024-02-01', '2024-03-01', '2024-04-01', 
+    '2024-05-01', '2024-06-01', '2024-07-01', '2024-08-01', 
+    '2024-09-01', '2024-10-01', '2024-11-01', '2024-12-01'
+  ],
+  vhi: [
+    '2024-01-01', '2024-02-01', '2024-03-01', '2024-04-01', 
+    '2024-05-01', '2024-06-01', '2024-07-01', '2024-08-01', 
+    '2024-09-01', '2024-10-01', '2024-11-01', '2024-12-01'
+  ],
+  lst: [
+    '2023-01-01', '2023-02-01', '2023-03-01', '2023-04-01', 
+    '2023-05-01', '2023-06-01', '2023-07-01', '2023-08-01', 
+    '2023-09-01', '2023-10-01', '2023-11-01', '2023-12-01'
+  ]
+};
 
 export default function Home() {
   // UI State
@@ -28,6 +49,26 @@ export default function Home() {
   const [isDrawingMode, setIsDrawingMode] = useState(false);
   const [drawnField, setDrawnField] = useState(null);
   const [showSaveModal, setShowSaveModal] = useState(false);
+
+  // WMS Layer Management Hook
+  const {
+    layerStates: wmsLayerStates,
+    toggleLayerVisibility: toggleWMSLayerVisibility,
+    setLayerDateByIndex,
+    setLayerDate,
+    toggleLayerPlayback,
+    stopAllPlayback,
+    hideAllLayers: hideAllWMSLayers,
+    getVisibleLayers,
+    getPlayingLayers,
+  } = useWMSLayers({
+    dateArrays: wmsDateArrays,
+    onDateChange: (date, layerType) => {
+      console.log(`WMS Layer ${layerType} date changed to:`, date);
+      // The MapView component will handle the actual layer updates through MapLayerManager
+    },
+    playbackSpeed: 1000,
+  });
 
   // Fetch GeoJSON for the selected field
   const fetchFieldGeoJson = async (fieldId) => {
@@ -60,6 +101,9 @@ export default function Home() {
     setTimeSeriesData(null);
     setFieldGeoJson(null);
     
+    // Hide all WMS layers when selecting a new field to avoid confusion
+    hideAllWMSLayers();
+    
     // Fetch GeoJSON for the selected field
     if (field && field.farm_id) {
       await fetchFieldGeoJson(field.farm_id);
@@ -70,8 +114,12 @@ export default function Home() {
   const handleDrawingModeToggle = (isDrawing) => {
     setIsDrawingMode(isDrawing);
     if (!isDrawing) {
-      // Clear drawn field when exiting drawing mode
       setDrawnField(null);
+    }
+    
+    // Hide WMS layers during drawing mode for better visibility
+    if (isDrawing) {
+      stopAllPlayback();
     }
   };
 
@@ -79,7 +127,6 @@ export default function Home() {
   const handleFieldDrawn = (geoJsonFeature) => {
     console.log('Field drawn:', geoJsonFeature);
     
-    // Create a demo field object for display
     const demoField = {
       farm_id: 'demo_field',
       farm_name: 'Demo Field',
@@ -90,8 +137,6 @@ export default function Home() {
     
     setDrawnField(demoField);
     setIsDrawingMode(false);
-    
-    // Set the drawn field as selected and show in analysis panel
     setSelectedField(demoField);
     setFieldGeoJson(geoJsonFeature);
     setAnalysisPanelOpen(true);
@@ -110,6 +155,19 @@ export default function Home() {
     setAnalysisPanelOpen(false);
   };
 
+  // WMS Layer control handlers
+  const handleWMSLayerToggle = (layerType: 'ndvi' | 'vhi' | 'lst') => {
+    toggleWMSLayerVisibility(layerType);
+  };
+
+  const handleWMSDateChange = (layerType: 'ndvi' | 'vhi' | 'lst', dateIndex: number) => {
+    setLayerDateByIndex(layerType, dateIndex);
+  };
+
+  const handleWMSPlayToggle = (layerType: 'ndvi' | 'vhi' | 'lst') => {
+    toggleLayerPlayback(layerType);
+  };
+
   // Updated handler to receive analysis data from AnalysisPanel
   const handleAnalysisRun = async (analysisType, params) => {
     if (!selectedField) return;
@@ -118,6 +176,9 @@ export default function Home() {
     setProcessingType(getProcessingMessage(analysisType, params));
 
     try {
+      // Stop any WMS layer playback during analysis
+      stopAllPlayback();
+
       switch (analysisType) {
         case 'heatmap':
           setIndexHeatMapData(params);
@@ -133,6 +194,22 @@ export default function Home() {
           
         case 'report':
           await handleReportGeneration(params);
+          break;
+          
+        // Add WMS-specific analysis types
+        case 'wms_ndvi':
+          handleWMSLayerToggle('ndvi');
+          setAnalysisResults({ type: 'wms_ndvi', ...params });
+          break;
+          
+        case 'wms_vhi':
+          handleWMSLayerToggle('vhi');
+          setAnalysisResults({ type: 'wms_vhi', ...params });
+          break;
+          
+        case 'wms_lst':
+          handleWMSLayerToggle('lst');
+          setAnalysisResults({ type: 'wms_lst', ...params });
           break;
           
         default:
@@ -156,6 +233,12 @@ export default function Home() {
         return `Generating ${params.index} Time Series...`;
       case 'report':
         return 'Generating Report...';
+      case 'wms_ndvi':
+        return 'Loading NDVI Layer...';
+      case 'wms_vhi':
+        return 'Loading VHI Layer...';
+      case 'wms_lst':
+        return 'Loading LST Layer...';
       default:
         return `Running ${analysisType} analysis...`;
     }
@@ -165,7 +248,6 @@ export default function Home() {
     try {
       console.log('Time series analysis params:', params);
       
-      // Simulate API calls for time series if needed
       const [indexResponse, vhiResponse] = await Promise.all([
         fetch(`https://digisaka.app/api/mobile/field-index/${selectedField.farm_id}`, {
           method: 'POST',
@@ -238,6 +320,9 @@ export default function Home() {
     setSelectedField(null);
     setFieldGeoJson(null);
     setAnalysisPanelOpen(false);
+    
+    // Hide all WMS layers when closing analysis
+    hideAllWMSLayers();
   };
 
   const handleDeleteField = async (fieldId) => {
@@ -253,6 +338,7 @@ export default function Home() {
         setAnalysisResults(null);
         setIndexHeatMapData(null);
         setTimeSeriesData(null);
+        hideAllWMSLayers();
       }
     } catch (error) {
       console.error('Delete field error:', error);
@@ -309,13 +395,28 @@ export default function Home() {
         <div className="flex-1 relative">
           {/* Processing indicator */}
           {processing && (
-            <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-20 bg-white rounded-lg shadow-lg p-4">
+            <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-30 bg-white rounded-lg shadow-lg p-4">
               <div className="flex items-center space-x-3">
                 <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-emerald-500"></div>
                 <div className="text-sm text-gray-700">
                   <div className="font-medium">{processingType}</div>
                   <div className="text-gray-500">Please wait...</div>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Active WMS Layers Indicator */}
+          {getVisibleLayers().length > 0 && (
+            <div className="absolute top-4 left-4 z-15 bg-green-100 border border-green-300 rounded-lg p-2">
+              <div className="flex items-center space-x-2">
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                <span className="text-xs text-green-700 font-medium">
+                  {getVisibleLayers().length} WMS Layer{getVisibleLayers().length > 1 ? 's' : ''} Active
+                </span>
+                {getPlayingLayers().length > 0 && (
+                  <i className="ri-play-fill text-green-600 text-sm"></i>
+                )}
               </div>
             </div>
           )}
@@ -331,6 +432,13 @@ export default function Home() {
             isLoadingGeoJson={isLoadingGeoJson}
             isDrawingMode={isDrawingMode}
             onFieldDrawn={handleFieldDrawn}
+            onTimeSeriesSliderChange={handleTimeSeriesSliderChange}
+            // Pass WMS layer states
+            wmsLayerStates={wmsLayerStates}
+            wmsDateArrays={wmsDateArrays}
+            onWMSDateChange={handleWMSDateChange}
+            onWMSLayerToggle={handleWMSLayerToggle}
+            onWMSPlayToggle={handleWMSPlayToggle}
           />
         </div>
       </div>
@@ -353,6 +461,9 @@ export default function Home() {
           indexHeatMapData={indexHeatMapData}
           timeSeriesData={timeSeriesData}
           onTimeSeriesSliderChange={handleTimeSeriesSliderChange}
+          // Pass WMS states for analysis panel integration
+          wmsLayerStates={wmsLayerStates}
+          onWMSAnalysisRun={(layerType) => handleAnalysisRun(`wms_${layerType}`, { layerType })}
         />
       )}
 
@@ -364,7 +475,6 @@ export default function Home() {
           onSave={(savedField) => {
             setDrawnField(null);
             setShowSaveModal(false);
-            // Optionally refresh the fields list or add the saved field to state
             console.log('Field saved:', savedField);
           }}
         />
@@ -373,7 +483,7 @@ export default function Home() {
   );
 }
 
-// Save Field Modal Component
+// Save Field Modal Component (keeping existing implementation)
 function SaveFieldModal({ drawnField, onClose, onSave }) {
   const [formValues, setFormValues] = useState({
     name: '',
@@ -404,7 +514,6 @@ function SaveFieldModal({ drawnField, onClose, onSave }) {
 
     setIsLoading(true);
     try {
-      // Prepare the geometry data
       const geometry = drawnField.geometry;
       
       const payload = {

@@ -9,18 +9,24 @@ import { Vector as VectorLayer } from 'ol/layer';
 import { Style, Fill, Stroke, Circle } from 'ol/style';
 import { GeoJSON } from 'ol/format';
 
-// Import components from MapUtils folder
+// Import components
 import MapControls from './MapUtils/MapControls';
 import SearchBar from './MapUtils/SearchBar';
 import TimeSeriesSlider from './MapUtils/TimeSeriesSlider';
 import MapLegend from './MapUtils/MapLegend';
 import MapStatusIndicators from './MapUtils/MapStatusIndicators';
+import WMSTimeSeriesSlider from './WMSTimeSeriesSlider';
+import LayerTogglePanel from './LayerTogglePanel';
+
+// Import enhanced layer manager
 import { MapLayerManager } from './MapUtils/MapLayerManager';
+import type { LayerVisibilityState, LayerOpacityState } from './MapUtils/MapLayerManager';
 
 // Import hooks
 import { useMapControls } from './MapUtils/hooks/useMapControls';
 import { useTimeSeriesControl } from './MapUtils/hooks/useTimeSeriesControl';
 import { useLayerControls } from './MapUtils/hooks/useLayerControls';
+import type { WMSLayerState } from './MapUtils/hooks/useWMSLayers';
 
 // Import utilities
 import {
@@ -43,6 +49,17 @@ interface MapViewProps {
   // Drawing props
   isDrawingMode?: boolean;
   onFieldDrawn?: (geoJsonFeature: any) => void;
+  
+  // WMS props
+  wmsLayerStates?: WMSLayerState;
+  wmsDateArrays?: {
+    ndvi: string[];
+    vhi: string[];
+    lst: string[];
+  };
+  onWMSDateChange?: (date: string, layerType: 'ndvi' | 'vhi' | 'lst') => void;
+  onWMSLayerToggle?: (layerType: 'ndvi' | 'vhi' | 'lst') => void;
+  onWMSPlayToggle?: (layerType: 'ndvi' | 'vhi' | 'lst') => void;
 }
 
 export default function MapView({
@@ -59,7 +76,14 @@ export default function MapView({
   
   // Drawing props
   isDrawingMode = false,
-  onFieldDrawn
+  onFieldDrawn,
+  
+  // WMS props
+  wmsLayerStates,
+  wmsDateArrays,
+  onWMSDateChange,
+  onWMSLayerToggle,
+  onWMSPlayToggle
 }: MapViewProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<Map | null>(null);
@@ -71,6 +95,23 @@ export default function MapView({
   const snapInteractionRef = useRef<Snap | null>(null);
   const drawSourceRef = useRef<VectorSource | null>(null);
   const drawLayerRef = useRef<VectorLayer<VectorSource> | null>(null);
+
+  // Non-WMS Layer states (heatMap and timeSeries only)
+  const [layerVisibility, setLayerVisibility] = useState<LayerVisibilityState>({
+    ndvi: false,
+    vhi: false, 
+    lst: false,
+    heatMap: false,
+    timeSeries: false,
+  });
+
+  const [layerOpacity, setLayerOpacity] = useState<LayerOpacityState>({
+    ndvi: 0.8,
+    vhi: 0.8,
+    lst: 0.8,
+    heatMap: 0.7,
+    timeSeries: 0.7,
+  });
 
   // Custom hooks for state management
   const {
@@ -102,7 +143,7 @@ export default function MapView({
     timeSeriesData,
     onTimeSeriesChange: (imageData) => {
       if (layerManagerRef.current) {
-        layerManagerRef.current.updateTimeSeriesLayer(imageData, layerOpacities.timeSeries);
+        layerManagerRef.current.updateTimeSeriesLayer(imageData, layerOpacity.timeSeries);
       }
       if (onTimeSeriesSliderChange) {
         onTimeSeriesSliderChange(imageData);
@@ -117,20 +158,119 @@ export default function MapView({
     showLegendPanel
   } = useLayerControls();
 
+  // Sync WMS layer states with local state and MapLayerManager
+  useEffect(() => {
+    if (wmsLayerStates && layerManagerRef.current) {
+      console.log('MapView: Syncing WMS layer states:', wmsLayerStates);
+      
+      // Update local visibility state for UI consistency
+      setLayerVisibility(prev => ({
+        ...prev,
+        ndvi: wmsLayerStates.ndvi?.visible || false,
+        vhi: wmsLayerStates.vhi?.visible || false,
+        lst: wmsLayerStates.lst?.visible || false,
+      }));
+
+      // Update actual map layers
+      const layerTypes: ('ndvi' | 'vhi' | 'lst')[] = ['ndvi', 'vhi', 'lst'];
+      
+      layerTypes.forEach(layerType => {
+        const layerState = wmsLayerStates[layerType];
+        if (layerState) {
+          // Toggle layer visibility
+          layerManagerRef.current!.toggleWMSLayer(layerType, layerState.visible);
+          
+          // Update layer time if visible and has current date
+          if (layerState.visible && layerState.currentDate) {
+            layerManagerRef.current!.updateWMSLayerTime(layerType, layerState.currentDate);
+          }
+        }
+      });
+    }
+  }, [wmsLayerStates]);
+
+  // Handle non-WMS layer toggle
+  const handleLayerToggle = (layerType: keyof LayerVisibilityState, visible: boolean) => {
+    // For WMS layers, delegate to parent
+    if (['ndvi', 'vhi', 'lst'].includes(layerType)) {
+      if (onWMSLayerToggle) {
+        onWMSLayerToggle(layerType as 'ndvi' | 'vhi' | 'lst');
+      }
+      return;
+    }
+    
+    // Handle non-WMS layers locally
+    setLayerVisibility(prev => ({ ...prev, [layerType]: visible }));
+    
+    if (layerManagerRef.current) {
+      if (layerType === 'heatMap' || layerType === 'timeSeries') {
+        layerManagerRef.current.toggleLayerVisibility(layerType, layerOpacity[layerType]);
+      }
+    }
+  };
+
+  // Handle opacity change
+  const handleOpacityChange = (layerType: keyof LayerOpacityState, opacity: number) => {
+    setLayerOpacity(prev => ({ ...prev, [layerType]: opacity }));
+    
+    if (layerManagerRef.current) {
+      if (['ndvi', 'vhi', 'lst'].includes(layerType)) {
+        layerManagerRef.current.setWMSLayerOpacity(layerType as 'ndvi' | 'vhi' | 'lst', opacity);
+      } else if (layerType === 'heatMap' || layerType === 'timeSeries') {
+        layerManagerRef.current.adjustLayerOpacity(layerType, opacity);
+      }
+    }
+  };
+
+  // Handle WMS date change
+  const handleWMSDateChange = (date: string, layerType: 'ndvi' | 'vhi' | 'lst') => {
+    console.log(`MapView: WMS date change for ${layerType}:`, date);
+    
+    // Update the layer in MapLayerManager immediately
+    if (layerManagerRef.current) {
+      layerManagerRef.current.updateWMSLayerTime(layerType, date);
+    }
+    
+    // Notify parent component
+    if (onWMSDateChange) {
+      onWMSDateChange(date, layerType);
+    }
+  };
+
+  // Get legend URLs
+  const getLegendUrls = () => {
+    if (!layerManagerRef.current) return {};
+    
+    return {
+      ndvi: layerManagerRef.current.getWMSLegendUrl('ndvi'),
+      vhi: layerManagerRef.current.getWMSLegendUrl('vhi'),
+      lst: layerManagerRef.current.getWMSLegendUrl('lst'),
+    };
+  };
+
+  // Get current layer visibility state (combining WMS and non-WMS)
+  const getCurrentLayerVisibility = (): LayerVisibilityState => {
+    return {
+      ndvi: wmsLayerStates?.ndvi?.visible || false,
+      vhi: wmsLayerStates?.vhi?.visible || false,
+      lst: wmsLayerStates?.lst?.visible || false,
+      heatMap: layerVisibility.heatMap,
+      timeSeries: layerVisibility.timeSeries,
+    };
+  };
+
   // Create persistent drawing styles
   const createDrawingStyles = () => {
     return {
-      // Style for completed features (drawn polygons)
       featureStyle: new Style({
         fill: new Fill({
-          color: 'rgba(59, 130, 246, 0.3)', // Blue with transparency
+          color: 'rgba(59, 130, 246, 0.3)',
         }),
         stroke: new Stroke({
-          color: '#3B82F6', // Blue
+          color: '#3B82F6',
           width: 3,
         }),
       }),
-      // Style for drawing in progress
       drawingStyle: new Style({
         fill: new Fill({
           color: 'rgba(59, 130, 246, 0.2)',
@@ -151,7 +291,6 @@ export default function MapView({
           }),
         }),
       }),
-      // Style for modify handles
       modifyStyle: new Style({
         image: new Circle({
           radius: 8,
@@ -173,47 +312,40 @@ export default function MapView({
 
     const styles = createDrawingStyles();
 
-    // Create drawing source and layer
     const drawSource = new VectorSource();
     drawSourceRef.current = drawSource;
 
     const drawLayer = new VectorLayer({
       source: drawSource,
-      style: styles.featureStyle, // Use consistent style for completed features
-      zIndex: 1000, // High z-index to ensure visibility
+      style: styles.featureStyle,
+      zIndex: 1000,
     });
     drawLayerRef.current = drawLayer;
     mapInstanceRef.current.addLayer(drawLayer);
 
-    // Create draw interaction for polygons
     const drawInteraction = new Draw({
       source: drawSource,
       type: 'Polygon',
-      style: styles.drawingStyle, // Style while drawing
+      style: styles.drawingStyle,
     });
     drawInteractionRef.current = drawInteraction;
 
-    // Create modify interaction
     const modifyInteraction = new Modify({ 
       source: drawSource,
       style: styles.modifyStyle,
     });
     modifyInteractionRef.current = modifyInteraction;
 
-    // Create snap interaction
     const snapInteraction = new Snap({ source: drawSource });
     snapInteractionRef.current = snapInteraction;
 
-    // Handle draw end event
     drawInteraction.on('drawend', (event) => {
       const feature = event.feature;
       const geometry = feature.getGeometry();
       
       if (geometry) {
-        // Ensure the feature uses the correct style
         feature.setStyle(styles.featureStyle);
         
-        // Force map refresh to ensure visibility
         setTimeout(() => {
           if (mapInstanceRef.current) {
             mapInstanceRef.current.getView().changed();
@@ -221,25 +353,19 @@ export default function MapView({
           }
         }, 100);
 
-        // Convert to GeoJSON
         const geoJsonFormat = new GeoJSON();
         const geoJsonFeature = geoJsonFormat.writeFeatureObject(feature, {
           featureProjection: mapInstanceRef.current?.getView().getProjection(),
           dataProjection: 'EPSG:4326',
         });
 
-        console.log('Feature drawn:', geoJsonFeature);
-
-        // Call the callback with the drawn feature
         if (onFieldDrawn) {
           onFieldDrawn(geoJsonFeature);
         }
       }
     });
 
-    // Handle modify end event to maintain visibility
-    modifyInteraction.on('modifyend', (event) => {
-      // Force refresh after modification
+    modifyInteraction.on('modifyend', () => {
       setTimeout(() => {
         if (mapInstanceRef.current) {
           mapInstanceRef.current.getView().changed();
@@ -264,16 +390,10 @@ export default function MapView({
         mapInstanceRef.current.removeInteraction(snapInteractionRef.current);
         snapInteractionRef.current = null;
       }
-      // DON'T remove the layer here - keep drawn features visible
-      // if (drawLayerRef.current) {
-      //   mapInstanceRef.current.removeLayer(drawLayerRef.current);
-      //   drawLayerRef.current = null;
-      // }
     }
-    // drawSourceRef.current = null; // Keep the source reference
   };
 
-  // Clear all drawn features (call this explicitly when needed)
+  // Clear all drawn features
   const clearDrawnFeatures = () => {
     if (drawSourceRef.current) {
       drawSourceRef.current.clear();
@@ -285,12 +405,10 @@ export default function MapView({
     if (!mapInstanceRef.current) return;
 
     if (isDrawingMode) {
-      // Initialize drawing if not already done
       if (!drawSourceRef.current) {
         initializeDrawing();
       }
       
-      // Add drawing interactions
       if (drawInteractionRef.current) {
         mapInstanceRef.current.addInteraction(drawInteractionRef.current);
       }
@@ -301,10 +419,8 @@ export default function MapView({
         mapInstanceRef.current.addInteraction(snapInteractionRef.current);
       }
       
-      // Change cursor
       mapInstanceRef.current.getTargetElement().style.cursor = 'crosshair';
     } else {
-      // Remove drawing interactions but keep the layer visible
       if (mapInstanceRef.current && drawInteractionRef.current) {
         mapInstanceRef.current.removeInteraction(drawInteractionRef.current);
       }
@@ -315,26 +431,18 @@ export default function MapView({
         mapInstanceRef.current.removeInteraction(snapInteractionRef.current);
       }
       
-      // Reset cursor
       if (mapInstanceRef.current) {
         mapInstanceRef.current.getTargetElement().style.cursor = '';
       }
     }
   }, [isDrawingMode, onFieldDrawn]);
 
-  // REMOVED: Don't clear features when exiting drawing mode
-  // This was the main cause of the issue
-  // useEffect(() => {
-  //   if (!isDrawingMode && drawSourceRef.current) {
-  //     drawSourceRef.current.clear();
-  //   }
-  // }, [isDrawingMode]);
-
   // Initialize the map
   useEffect(() => {
     if (!mapRef.current) return;
 
-    // Create the map
+    console.log('MapView: Initializing map...');
+
     const map = new Map({
       target: mapRef.current,
       layers: [],
@@ -349,17 +457,18 @@ export default function MapView({
     
     // Initialize layer manager
     layerManagerRef.current = new MapLayerManager(map);
+    console.log('MapView: MapLayerManager initialized');
     
     // Add base layer
     const baseLayers = MapLayerManager.createBaseLayers();
     map.addLayer(baseLayers[currentBaseLayer]);
     
-    // Initialize vector layer
+    // Initialize vector layer for field boundaries
     layerManagerRef.current.initializeVectorLayer();
 
-    // Add click handler for map interactions (only when not drawing)
+    // Set up map event listeners
     map.on('click', (event) => {
-      if (isDrawingMode) return; // Don't handle clicks when drawing
+      if (isDrawingMode) return;
       
       const feature = map.forEachFeatureAtPixel(event.pixel, (feature) => feature);
       if (feature && onFieldClick) {
@@ -367,20 +476,17 @@ export default function MapView({
         onFieldClick(properties);
       }
       
-      // Get coordinates for debugging/info
       const coordinates = toLonLat(event.coordinate);
       console.log('Map clicked at:', coordinates);
     });
 
-    // Add pointer move handler for cursor change
     map.on('pointermove', (event) => {
-      if (isDrawingMode) return; // Keep drawing cursor when in drawing mode
+      if (isDrawingMode) return;
       
       const feature = map.forEachFeatureAtPixel(event.pixel, (feature) => feature);
       map.getTargetElement().style.cursor = feature ? 'pointer' : '';
     });
 
-    // Add view change handlers
     map.getView().on('change:center', () => {
       const center = toLonLat(map.getView().getCenter() || [0, 0]);
       setMapCoordinates([center[0], center[1]]);
@@ -418,34 +524,35 @@ export default function MapView({
     }
   }, [fieldGeoJson, selectedField]);
 
-  // Handle heat map data - Auto show legend when field loaded
+  // Handle heat map data
   useEffect(() => {
     if (layerManagerRef.current) {
-      layerManagerRef.current.updateHeatMapLayer(indexHeatMapData, layerOpacities.heatMap);
+      layerManagerRef.current.updateHeatMapLayer(indexHeatMapData, layerOpacity.heatMap);
       if (indexHeatMapData?.tileUrl) {
+        setLayerVisibility(prev => ({ ...prev, heatMap: true }));
         showLegendPanel();
       }
     }
-  }, [indexHeatMapData, layerOpacities.heatMap]);
+  }, [indexHeatMapData, layerOpacity.heatMap]);
 
-  // Handle time series data and show slider
+  // Handle time series data
   useEffect(() => {
     if (timeSeriesData?.results && timeSeriesData.results.length > 0) {
       showLegendPanel();
-      // Load the first time series image
       if (layerManagerRef.current) {
         layerManagerRef.current.updateTimeSeriesLayer(
           timeSeriesData.results[0],
-          layerOpacities.timeSeries
+          layerOpacity.timeSeries
         );
+        setLayerVisibility(prev => ({ ...prev, timeSeries: true }));
       }
     } else {
-      // Remove time series layer if it exists
       if (layerManagerRef.current) {
         layerManagerRef.current.updateTimeSeriesLayer(null);
+        setLayerVisibility(prev => ({ ...prev, timeSeries: false }));
       }
     }
-  }, [timeSeriesData, layerOpacities.timeSeries]);
+  }, [timeSeriesData, layerOpacity.timeSeries]);
 
   // Handle search location selection
   const handleLocationSelect = (lat: number, lon: number, name: string) => {
@@ -465,21 +572,6 @@ export default function MapView({
     }
   };
 
-  // Toggle layer visibility
-  const toggleLayerVisibility = (layerType: 'heatMap' | 'timeSeries') => {
-    if (layerManagerRef.current) {
-      layerManagerRef.current.toggleLayerVisibility(layerType, layerOpacities[layerType]);
-    }
-  };
-
-  // Handle layer opacity changes
-  const handleLayerOpacityChange = (layerType: 'heatMap' | 'timeSeries', opacity: number) => {
-    adjustLayerOpacity(layerType, opacity);
-    if (layerManagerRef.current) {
-      layerManagerRef.current.adjustLayerOpacity(layerType, opacity);
-    }
-  };
-
   // Get current analysis info
   const analysisInfo = getCurrentAnalysisInfo(
     showTimeSeriesSlider,
@@ -491,11 +583,72 @@ export default function MapView({
   // Get visualization parameters
   const visParams = getVisualizationParams(timeSeriesData, indexHeatMapData);
 
+  // Get currently active WMS layer for slider
+  const getActiveWMSLayer = (): { type: 'ndvi' | 'vhi' | 'lst'; name: string } | null => {
+    if (!wmsLayerStates) return null;
+    
+    if (wmsLayerStates.ndvi?.visible) return { type: 'ndvi', name: 'NDVI' };
+    if (wmsLayerStates.vhi?.visible) return { type: 'vhi', name: 'VHI' };
+    if (wmsLayerStates.lst?.visible) return { type: 'lst', name: 'LST' };
+    return null;
+  };
+
+  // Get currently visible WMS layers count
+  const getVisibleWMSLayersCount = (): number => {
+    if (!wmsLayerStates) return 0;
+    
+    let count = 0;
+    if (wmsLayerStates.ndvi?.visible) count++;
+    if (wmsLayerStates.vhi?.visible) count++;
+    if (wmsLayerStates.lst?.visible) count++;
+    return count;
+  };
+
+  // Get currently playing WMS layers count  
+  const getPlayingWMSLayersCount = (): number => {
+    if (!wmsLayerStates) return 0;
+    
+    let count = 0;
+    if (wmsLayerStates.ndvi?.isPlaying) count++;
+    if (wmsLayerStates.vhi?.isPlaying) count++;
+    if (wmsLayerStates.lst?.isPlaying) count++;
+    return count;
+  };
+
+  const activeWMSLayer = getActiveWMSLayer();
+  const visibleWMSLayersCount = getVisibleWMSLayersCount();
+  const playingWMSLayersCount = getPlayingWMSLayersCount();
+  const currentLayerVisibility = getCurrentLayerVisibility();
+
   return (
     <div className={`relative w-full h-full bg-gray-900 overflow-hidden ${className}`}>
       {/* Map Container */}
       <div ref={mapRef} className="w-full h-full"></div>
       
+      {/* Layer Toggle Panel */}
+      <LayerTogglePanel
+        layerVisibility={currentLayerVisibility}
+        layerOpacity={layerOpacity}
+        onLayerToggle={handleLayerToggle}
+        onOpacityChange={handleOpacityChange}
+        legendUrls={getLegendUrls()}
+      />
+
+      {/* Active WMS Layers Indicator */}
+      {visibleWMSLayersCount > 0 && (
+        <div className="absolute top-4 left-4 z-15 bg-green-100 border border-green-300 rounded-lg p-2">
+          <div className="flex items-center space-x-2">
+            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+            <span className="text-xs text-green-700 font-medium">
+              {visibleWMSLayersCount} WMS Layer{visibleWMSLayersCount > 1 ? 's' : ''} Active
+            </span>
+            {playingWMSLayersCount > 0 && (
+              <i className="ri-play-fill text-green-600 text-sm"></i>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Drawing Mode Indicator */}
       {isDrawingMode && (
         <div className="absolute top-4 left-4 z-20 bg-blue-600 text-white px-4 py-2 rounded-lg shadow-lg">
@@ -506,7 +659,6 @@ export default function MapView({
           <div className="text-xs mt-1 opacity-90">
             Click to draw field boundary, double-click to finish
           </div>
-          {/* Add clear button */}
           <button
             onClick={clearDrawnFeatures}
             className="mt-2 text-xs bg-red-500 hover:bg-red-600 px-2 py-1 rounded"
@@ -523,8 +675,8 @@ export default function MapView({
         onGetCurrentLocation={getCurrentLocation}
         onZoomToField={handleZoomToField}
         onToggleFullscreen={toggleFullscreen}
-        onToggleHeatMap={() => toggleLayerVisibility('heatMap')}
-        onToggleTimeSeries={() => toggleLayerVisibility('timeSeries')}
+        onToggleHeatMap={() => handleLayerToggle('heatMap', !layerVisibility.heatMap)}
+        onToggleTimeSeries={() => handleLayerToggle('timeSeries', !layerVisibility.timeSeries)}
         selectedField={selectedField}
         hasIndexHeatMap={!!indexHeatMapData}
         hasTimeSeries={showTimeSeriesSlider}
@@ -540,8 +692,20 @@ export default function MapView({
         <SearchBar onLocationSelect={handleLocationSelect} />
       )}
 
-      {/* Time Series Slider */}
-      {showTimeSeriesSlider && timeSeriesData && (
+      {/* WMS Time Series Slider */}
+      {activeWMSLayer && wmsDateArrays && (
+        <WMSTimeSeriesSlider
+          dateArray={wmsDateArrays[activeWMSLayer.type] || []}
+          layerType={activeWMSLayer.type}
+          layerName={activeWMSLayer.name}
+          isVisible={true}
+          onDateChange={handleWMSDateChange}
+          onPlayToggle={onWMSPlayToggle}
+        />
+      )}
+
+      {/* Regular Time Series Slider */}
+      {showTimeSeriesSlider && timeSeriesData && !activeWMSLayer && (
         <TimeSeriesSlider
           timeSeriesData={timeSeriesData}
           currentIndex={currentTimeSeriesIndex}
@@ -586,14 +750,6 @@ export default function MapView({
           </div>
         </div>
       )}
-
-      {/* Click handler to close dropdowns */}
-      <div 
-        className="absolute inset-0 pointer-events-none"
-        onClick={() => {
-          // Close any open menus when clicking on map
-        }}
-      />
     </div>
   );
 }

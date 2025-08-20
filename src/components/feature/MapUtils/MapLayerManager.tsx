@@ -1,17 +1,72 @@
 import { Map } from 'ol';
-import { Tile as TileLayer, Vector as VectorLayer } from 'ol/layer';
-import { XYZ, Vector as VectorSource } from 'ol/source';
+import { Tile as TileLayer, Vector as VectorLayer, Image as ImageLayer } from 'ol/layer';
+import { XYZ, Vector as VectorSource, TileWMS, ImageWMS } from 'ol/source';
 import { GeoJSON } from 'ol/format';
 import { Style, Stroke, Fill } from 'ol/style';
+
+export interface WMSLayerConfig {
+  url: string;
+  layers: string;
+  styles?: string;
+  defaultTime: string;
+  visible: boolean;
+}
+
+export interface LayerVisibilityState {
+  ndvi: boolean;
+  vhi: boolean;
+  lst: boolean;
+  heatMap: boolean;
+  timeSeries: boolean;
+}
+
+export interface LayerOpacityState {
+  ndvi: number;
+  vhi: number;
+  lst: number;
+  heatMap: number;
+  timeSeries: number;
+}
 
 export class MapLayerManager {
   private map: Map;
   private vectorLayer: VectorLayer | null = null;
   private heatMapLayer: TileLayer | null = null;
   private timeSeriesLayer: TileLayer | null = null;
+  
+  // WMS layers
+  private ndviLayer: ImageLayer<ImageWMS> | null = null;
+  private vhiLayer: ImageLayer<ImageWMS> | null = null;
+  private lstLayer: ImageLayer<ImageWMS> | null = null;
+
+  // Layer configurations
+  private readonly wmsConfigs = {
+    ndvi: {
+      url: 'https://backend.digisaka.com/geoserver/NDVI_Yield/wms',
+      layers: 'NDVI_Yield:database_for_webgis',
+      styles: 'ndvi',
+      defaultTime: '2024-01-01',
+      visible: false
+    },
+    vhi: {
+      url: 'https://backend.digisaka.com/geoserver/VHI/wms',
+      layers: 'VHI:VHI_Exports_Monthly_2000_2024',
+      styles: 'VHI',
+      defaultTime: '2024-01-01',
+      visible: false
+    },
+    lst: {
+      url: 'https://backend.digisaka.com/geoserver/LST/wms',
+      layers: 'LST:LST_1km_Monthly',
+      styles: 'LST',
+      defaultTime: '2023-01-01',
+      visible: false
+    }
+  };
 
   constructor(map: Map) {
     this.map = map;
+    this.initializeWMSLayers();
   }
 
   // Create base layers
@@ -38,6 +93,82 @@ export class MapLayerManager {
     };
   }
 
+  // Initialize WMS layers
+  private initializeWMSLayers() {
+    console.log('MapLayerManager: Initializing WMS layers...');
+
+    // NDVI Layer - Using ImageWMS instead of TileWMS
+    this.ndviLayer = new ImageLayer({
+      source: new ImageWMS({
+        url: this.wmsConfigs.ndvi.url,
+        params: {
+          'LAYERS': this.wmsConfigs.ndvi.layers,
+          'FORMAT': 'image/png',
+          'TRANSPARENT': true,
+          'TIME': this.wmsConfigs.ndvi.defaultTime,
+          'STYLES': this.wmsConfigs.ndvi.styles,
+          'VERSION': '1.1.1',
+          'SRS': 'EPSG:3857'
+        },
+        serverType: 'geoserver',
+        crossOrigin: 'anonymous',
+      }),
+      visible: this.wmsConfigs.ndvi.visible,
+      opacity: 0.8,
+    });
+
+    // VHI Layer
+    this.vhiLayer = new ImageLayer({
+      source: new ImageWMS({
+        url: this.wmsConfigs.vhi.url,
+        params: {
+          'LAYERS': this.wmsConfigs.vhi.layers,
+          'FORMAT': 'image/png',
+          'TRANSPARENT': true,
+          'TIME': this.wmsConfigs.vhi.defaultTime,
+          'STYLES': this.wmsConfigs.vhi.styles,
+          'VERSION': '1.1.1',
+          'SRS': 'EPSG:3857'
+        },
+        serverType: 'geoserver',
+        crossOrigin: 'anonymous',
+      }),
+      visible: this.wmsConfigs.vhi.visible,
+      opacity: 0.8,
+    });
+
+    // LST Layer
+    this.lstLayer = new ImageLayer({
+      source: new ImageWMS({
+        url: this.wmsConfigs.lst.url,
+        params: {
+          'LAYERS': this.wmsConfigs.lst.layers,
+          'FORMAT': 'image/png',
+          'TRANSPARENT': true,
+          'TIME': this.wmsConfigs.lst.defaultTime,
+          'STYLES': this.wmsConfigs.lst.styles,
+          'VERSION': '1.1.1',
+          'SRS': 'EPSG:3857'
+        },
+        serverType: 'geoserver',
+        crossOrigin: 'anonymous',
+      }),
+      visible: this.wmsConfigs.lst.visible,
+      opacity: 0.8,
+    });
+
+    // Add WMS layers to map with proper z-index
+    this.ndviLayer.setZIndex(100);
+    this.vhiLayer.setZIndex(101);
+    this.lstLayer.setZIndex(102);
+
+    this.map.addLayer(this.ndviLayer);
+    this.map.addLayer(this.vhiLayer);
+    this.map.addLayer(this.lstLayer);
+
+    console.log('MapLayerManager: WMS layers initialized and added to map');
+  }
+
   // Initialize vector layer for GeoJSON
   initializeVectorLayer(): VectorLayer {
     const vectorSource = new VectorSource();
@@ -52,6 +183,7 @@ export class MapLayerManager {
           color: 'rgba(16, 185, 129, 0.15)',
         }),
       }),
+      zIndex: 1000, // High z-index to ensure field boundaries are visible
     });
 
     this.map.addLayer(this.vectorLayer);
@@ -103,6 +235,141 @@ export class MapLayerManager {
     }
   }
 
+  // Toggle WMS layer visibility with proper logging
+  toggleWMSLayer(layerType: 'ndvi' | 'vhi' | 'lst', visible: boolean) {
+    console.log(`MapLayerManager: Toggling ${layerType} layer to ${visible ? 'visible' : 'hidden'}`);
+    
+    const layer = this.getWMSLayer(layerType);
+    if (layer) {
+      layer.setVisible(visible);
+      
+      // Force refresh the layer to trigger network requests
+      if (visible) {
+        const source = layer.getSource() as ImageWMS;
+        if (source) {
+          console.log(`MapLayerManager: Refreshing ${layerType} layer source`);
+          source.refresh();
+          
+          // Log the current WMS parameters for debugging
+          const params = source.getParams();
+          console.log(`MapLayerManager: ${layerType} WMS params:`, params);
+          
+          // Generate sample URL for debugging
+          const url = source.getUrl();
+          console.log(`MapLayerManager: ${layerType} WMS base URL:`, url);
+        }
+      }
+      
+      // Trigger map render
+      this.map.render();
+    } else {
+      console.error(`MapLayerManager: ${layerType} layer not found!`);
+    }
+  }
+
+  // Update WMS layer time parameter
+  updateWMSLayerTime(layerType: 'ndvi' | 'vhi' | 'lst', dateTime: string) {
+    console.log(`MapLayerManager: Updating ${layerType} layer time to: ${dateTime}`);
+    
+    const layer = this.getWMSLayer(layerType);
+    if (layer && layer.getSource()) {
+      const source = layer.getSource() as ImageWMS;
+      
+      // Update the TIME parameter
+      source.updateParams({ 'TIME': dateTime });
+      
+      console.log(`MapLayerManager: ${layerType} layer time updated, params:`, source.getParams());
+      
+      // Force refresh to trigger new request
+      source.refresh();
+      
+      // Trigger map render
+      this.map.render();
+    } else {
+      console.error(`MapLayerManager: Cannot update time for ${layerType} layer - layer or source not found`);
+    }
+  }
+
+  // Set WMS layer opacity
+  setWMSLayerOpacity(layerType: 'ndvi' | 'vhi' | 'lst', opacity: number) {
+    console.log(`MapLayerManager: Setting ${layerType} layer opacity to: ${opacity}`);
+    
+    const layer = this.getWMSLayer(layerType);
+    if (layer) {
+      layer.setOpacity(opacity);
+      this.map.render();
+    }
+  }
+
+  // Get WMS layer by type
+  private getWMSLayer(layerType: 'ndvi' | 'vhi' | 'lst'): ImageLayer<ImageWMS> | null {
+    switch (layerType) {
+      case 'ndvi':
+        return this.ndviLayer;
+      case 'vhi':
+        return this.vhiLayer;
+      case 'lst':
+        return this.lstLayer;
+      default:
+        console.error(`MapLayerManager: Unknown layer type: ${layerType}`);
+        return null;
+    }
+  }
+
+  // Get WMS legend URL
+  getWMSLegendUrl(layerType: 'ndvi' | 'vhi' | 'lst'): string {
+    const config = this.wmsConfigs[layerType];
+    return `${config.url}?REQUEST=GetLegendGraphic&FORMAT=image/png&WIDTH=20&HEIGHT=20&LAYER=${config.layers}&STYLE=${config.styles}`;
+  }
+
+  // Check if any WMS layer is visible
+  isAnyWMSLayerVisible(): boolean {
+    return (
+      (this.ndviLayer?.getVisible() ?? false) ||
+      (this.vhiLayer?.getVisible() ?? false) ||
+      (this.lstLayer?.getVisible() ?? false)
+    );
+  }
+
+  // Get current layer visibility state
+  getLayerVisibility(): LayerVisibilityState {
+    return {
+      ndvi: this.ndviLayer?.getVisible() ?? false,
+      vhi: this.vhiLayer?.getVisible() ?? false,
+      lst: this.lstLayer?.getVisible() ?? false,
+      heatMap: (this.heatMapLayer?.getOpacity() ?? 0) > 0,
+      timeSeries: (this.timeSeriesLayer?.getOpacity() ?? 0) > 0,
+    };
+  }
+
+  // Get current layer opacity state
+  getLayerOpacity(): LayerOpacityState {
+    return {
+      ndvi: this.ndviLayer?.getOpacity() ?? 0.8,
+      vhi: this.vhiLayer?.getOpacity() ?? 0.8,
+      lst: this.lstLayer?.getOpacity() ?? 0.8,
+      heatMap: this.heatMapLayer?.getOpacity() ?? 0.7,
+      timeSeries: this.timeSeriesLayer?.getOpacity() ?? 0.7,
+    };
+  }
+
+  // Debug method to log current WMS layer states
+  debugWMSLayers() {
+    console.log('MapLayerManager: Current WMS layer states:');
+    ['ndvi', 'vhi', 'lst'].forEach(layerType => {
+      const layer = this.getWMSLayer(layerType as 'ndvi' | 'vhi' | 'lst');
+      if (layer) {
+        const source = layer.getSource() as ImageWMS;
+        console.log(`${layerType}:`, {
+          visible: layer.getVisible(),
+          opacity: layer.getOpacity(),
+          params: source.getParams(),
+          url: source.getUrl()
+        });
+      }
+    });
+  }
+
   // Update heat map layer
   updateHeatMapLayer(indexHeatMapData: any, opacity: number = 0.7) {
     // Remove existing heat map layer
@@ -119,6 +386,7 @@ export class MapLayerManager {
           crossOrigin: 'anonymous',
         }),
         opacity: opacity,
+        zIndex: 500,
       });
 
       this.map.addLayer(this.heatMapLayer);
@@ -141,6 +409,7 @@ export class MapLayerManager {
           crossOrigin: 'anonymous',
         }),
         opacity: opacity,
+        zIndex: 500,
       });
 
       this.map.addLayer(this.timeSeriesLayer);
@@ -218,6 +487,18 @@ export class MapLayerManager {
     if (this.timeSeriesLayer) {
       this.map.removeLayer(this.timeSeriesLayer);
       this.timeSeriesLayer = null;
+    }
+    if (this.ndviLayer) {
+      this.map.removeLayer(this.ndviLayer);
+      this.ndviLayer = null;
+    }
+    if (this.vhiLayer) {
+      this.map.removeLayer(this.vhiLayer);
+      this.vhiLayer = null;
+    }
+    if (this.lstLayer) {
+      this.map.removeLayer(this.lstLayer);
+      this.lstLayer = null;
     }
     if (this.vectorLayer) {
       this.map.removeLayer(this.vectorLayer);
