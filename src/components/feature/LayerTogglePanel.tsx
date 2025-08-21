@@ -43,7 +43,7 @@ const layerConfigs: LayerConfig[] = [
     label: 'NDVI',
     color: 'text-green-600',
     icon: 'ri-leaf-line',
-    description: 'Normalized Difference Vegetation Index'
+    description: 'Projected Yield (Tons per Hectare)'
   },
   {
     key: 'vhi',
@@ -58,20 +58,6 @@ const layerConfigs: LayerConfig[] = [
     color: 'text-red-600',
     icon: 'ri-temp-hot-line',
     description: 'Land Surface Temperature'
-  },
-  {
-    key: 'heatMap',
-    label: 'Heat Map',
-    color: 'text-orange-600',
-    icon: 'ri-fire-line',
-    description: 'Analysis Heat Map'
-  },
-  {
-    key: 'timeSeries',
-    label: 'Time Series',
-    color: 'text-purple-600',
-    icon: 'ri-line-chart-line',
-    description: 'Time Series Analysis'
   }
 ];
 
