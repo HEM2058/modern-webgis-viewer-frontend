@@ -50,6 +50,10 @@ export default function Home() {
   const [drawnField, setDrawnField] = useState(null);
   const [showSaveModal, setShowSaveModal] = useState(false);
 
+  // Change Detection States
+  const [isChangeDetectionMode, setIsChangeDetectionMode] = useState(false);
+  const [changeDetectionData, setChangeDetectionData] = useState(null);
+
   // Track if analysis panel should be available (but not auto-opened)
   const [analysisPanelReady, setAnalysisPanelReady] = useState(false);
 
@@ -116,12 +120,14 @@ export default function Home() {
     setAnalysisPanelOpen(false);
     setAnalysisPanelReady(true);
     
-    // Clear any previous analysis results
+    // Clear any previous analysis results and change detection
     setAnalysisResults(null);
     setIndexData(null);
     setVhiData(null);
     setIndexHeatMapData(null);
     setTimeSeriesData(null);
+    setIsChangeDetectionMode(false);
+    setChangeDetectionData(null);
     
     console.log('Uploaded field setup complete, analysis panel ready');
   };
@@ -131,6 +137,10 @@ export default function Home() {
     console.log('Field selected:', field);
     
     setSelectedField(field);
+    
+    // Exit change detection mode when selecting new field
+    setIsChangeDetectionMode(false);
+    setChangeDetectionData(null);
     
     // Only auto-open for saved fields, not drawn/uploaded fields
     if (!field.isDemo) {
@@ -175,6 +185,8 @@ export default function Home() {
       setAnalysisPanelOpen(false);
       setAnalysisPanelReady(false);
       setDrawnField(null);
+      setIsChangeDetectionMode(false);
+      setChangeDetectionData(null);
       stopAllPlayback();
       console.log('Drawing mode started - analysis panel disabled');
     } else if (!isDrawing) {
@@ -219,12 +231,14 @@ export default function Home() {
       console.log('Analysis panel is now ready for manual opening');
     }, 100);
     
-    // Clear any previous analysis results
+    // Clear any previous analysis results and change detection
     setAnalysisResults(null);
     setIndexData(null);
     setVhiData(null);
     setIndexHeatMapData(null);
     setTimeSeriesData(null);
+    setIsChangeDetectionMode(false);
+    setChangeDetectionData(null);
     
     console.log('Demo field setup complete, analysis panel will be ready shortly');
   };
@@ -251,12 +265,14 @@ export default function Home() {
     setAnalysisPanelOpen(false);
     setAnalysisPanelReady(false);
     
-    // Clear analysis data
+    // Clear analysis data and change detection
     setAnalysisResults(null);
     setIndexData(null);
     setVhiData(null);
     setIndexHeatMapData(null);
     setTimeSeriesData(null);
+    setIsChangeDetectionMode(false);
+    setChangeDetectionData(null);
   };
 
   // WMS Layer control handlers
@@ -270,6 +286,31 @@ export default function Home() {
 
   const handleWMSPlayToggle = (layerType: 'ndvi' | 'vhi' | 'lst') => {
     toggleLayerPlayback(layerType);
+  };
+
+  // Handle change detection mode toggle
+  const handleChangeDetectionToggle = (enabled: boolean, beforeIndex?: number, afterIndex?: number) => {
+    setIsChangeDetectionMode(enabled);
+    
+    if (enabled && beforeIndex !== undefined && afterIndex !== undefined && timeSeriesData?.results) {
+      const changeData = {
+        before: timeSeriesData.results[beforeIndex],
+        after: timeSeriesData.results[afterIndex],
+        beforeIndex,
+        afterIndex
+      };
+      setChangeDetectionData(changeData);
+      
+      // Stop any playing animations when entering change detection
+      if (getPlayingLayers().length > 0) {
+        stopAllPlayback();
+      }
+      
+      console.log('Change detection enabled:', changeData);
+    } else {
+      setChangeDetectionData(null);
+      console.log('Change detection disabled');
+    }
   };
 
   // Updated handler to receive analysis data from AnalysisPanel
@@ -289,6 +330,10 @@ export default function Home() {
 
     setProcessing(true);
     setProcessingType(getProcessingMessage(analysisType, params));
+
+    // Exit change detection mode when running new analysis
+    setIsChangeDetectionMode(false);
+    setChangeDetectionData(null);
 
     try {
       // Stop any WMS layer playback during analysis
@@ -437,7 +482,9 @@ export default function Home() {
     setAnalysisPanelOpen(false);
     setAnalysisPanelReady(false);
     
-    // Hide all WMS layers when closing analysis
+    // Clear change detection and hide all WMS layers when closing analysis
+    setIsChangeDetectionMode(false);
+    setChangeDetectionData(null);
     hideAllWMSLayers();
   };
 
@@ -455,6 +502,8 @@ export default function Home() {
         setAnalysisResults(null);
         setIndexHeatMapData(null);
         setTimeSeriesData(null);
+        setIsChangeDetectionMode(false);
+        setChangeDetectionData(null);
         hideAllWMSLayers();
       }
     } catch (error) {
@@ -531,7 +580,7 @@ export default function Home() {
           )}
 
           {/* Demo field ready indicator with click prompt */}
-          {selectedField?.isDemo && fieldGeoJson && analysisPanelReady && (
+          {selectedField?.isDemo && fieldGeoJson && analysisPanelReady && !isChangeDetectionMode && (
             <div className="absolute top-4 right-4 z-30 bg-blue-100 border border-blue-300 rounded-lg p-3">
               <div className="flex items-center space-x-2">
                 <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
@@ -549,17 +598,23 @@ export default function Home() {
             </div>
           )}
 
-          {/* Active WMS Layers Indicator */}
-          {getVisibleLayers().length > 0 && (
-            <div className="absolute top-4 left-4 z-15 bg-green-100 border border-green-300 rounded-lg p-2">
+          {/* Change Detection Status Indicator */}
+          {isChangeDetectionMode && changeDetectionData && (
+            <div className="absolute top-4 right-4 z-30 bg-gradient-to-r from-blue-100 to-orange-100 border border-gray-300 rounded-lg p-3">
               <div className="flex items-center space-x-2">
-                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                <span className="text-xs text-green-700 font-medium">
-                  {getVisibleLayers().length} WMS Layer{getVisibleLayers().length > 1 ? 's' : ''} Active
+                <div className="w-2 h-2 bg-orange-500 rounded-full animate-pulse"></div>
+                <span className="text-sm text-gray-700 font-medium">
+                  Change Detection Active
                 </span>
-                {getPlayingLayers().length > 0 && (
-                  <i className="ri-play-fill text-green-600 text-sm"></i>
-                )}
+                <i className="ri-compare-line text-orange-600"></i>
+              </div>
+              <div className="text-xs text-gray-600 mt-1">
+                {new Date(changeDetectionData.before.date).toLocaleDateString()} 
+                <i className="ri-arrow-right-line mx-1"></i>
+                {new Date(changeDetectionData.after.date).toLocaleDateString()}
+              </div>
+              <div className="text-xs text-gray-500 mt-1">
+                ΔNDVI: {(changeDetectionData.after.mean_index_value - changeDetectionData.before.mean_index_value).toFixed(3)}
               </div>
             </div>
           )}
@@ -582,6 +637,8 @@ export default function Home() {
             onWMSDateChange={handleWMSDateChange}
             onWMSLayerToggle={handleWMSLayerToggle}
             onWMSPlayToggle={handleWMSPlayToggle}
+            // Pass change detection handler
+            onChangeDetectionToggle={handleChangeDetectionToggle}
           />
         </div>
       </div>
@@ -607,6 +664,9 @@ export default function Home() {
           // Pass WMS states for analysis panel integration
           wmsLayerStates={wmsLayerStates}
           onWMSAnalysisRun={(layerType) => handleAnalysisRun(`wms_${layerType}`, { layerType })}
+          // Pass change detection states
+          isChangeDetectionMode={isChangeDetectionMode}
+          changeDetectionData={changeDetectionData}
         />
       )}
 

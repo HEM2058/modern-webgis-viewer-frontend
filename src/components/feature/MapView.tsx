@@ -96,6 +96,14 @@ export default function MapView({
   const drawSourceRef = useRef<VectorSource | null>(null);
   const drawLayerRef = useRef<VectorLayer<VectorSource> | null>(null);
 
+  // Change Detection States
+  const [isChangeDetectionMode, setIsChangeDetectionMode] = useState(false);
+  const [changeDetectionImages, setChangeDetectionImages] = useState<{
+    before: any | null;
+    after: any | null;
+  }>({ before: null, after: null });
+  const [showChangeDetectionArrow, setShowChangeDetectionArrow] = useState(false);
+
   // Non-WMS Layer states (heatMap and timeSeries only)
   const [layerVisibility, setLayerVisibility] = useState<LayerVisibilityState>({
     ndvi: false,
@@ -157,6 +165,40 @@ export default function MapView({
     adjustLayerOpacity,
     showLegendPanel
   } = useLayerControls();
+
+  // Handle change detection toggle
+  const handleChangeDetectionToggle = (enabled: boolean, beforeIndex?: number, afterIndex?: number) => {
+    setIsChangeDetectionMode(enabled);
+    
+    if (enabled && beforeIndex !== undefined && afterIndex !== undefined && timeSeriesData?.results) {
+      // Set up change detection images
+      setChangeDetectionImages({
+        before: timeSeriesData.results[beforeIndex],
+        after: timeSeriesData.results[afterIndex]
+      });
+      setShowChangeDetectionArrow(true);
+      
+      // Stop any playing animation
+      if (isPlayingTimeSeries) {
+        togglePlayPause();
+      }
+    } else {
+      // Exit change detection mode
+      setChangeDetectionImages({ before: null, after: null });
+      setShowChangeDetectionArrow(false);
+    }
+  };
+
+  // Handle change detection layer updates
+  useEffect(() => {
+    if (layerManagerRef.current && isChangeDetectionMode && changeDetectionImages.before && changeDetectionImages.after) {
+      // Initially show the before image
+      layerManagerRef.current.updateTimeSeriesLayer(changeDetectionImages.before, layerOpacity.timeSeries);
+      
+      // You can extend MapLayerManager to support dual layer rendering for change detection
+      // For now, we'll handle it through the time series mechanism
+    }
+  }, [isChangeDetectionMode, changeDetectionImages, layerOpacity.timeSeries]);
 
   // Sync WMS layer states with local state and MapLayerManager
   useEffect(() => {
@@ -518,25 +560,25 @@ export default function MapView({
   }, [currentBaseLayer]);
 
   // Update GeoJSON visualization when fieldGeoJson changes
-useEffect(() => {
-  if (layerManagerRef.current) {
-    // Handle both regular fields and demo fields
-    let geoJsonToDisplay = fieldGeoJson;
-    
-    // If selectedField has geometry but fieldGeoJson is null (edge case)
-    if (!fieldGeoJson && selectedField?.geometry) {
-      geoJsonToDisplay = selectedField.geometry;
+  useEffect(() => {
+    if (layerManagerRef.current) {
+      // Handle both regular fields and demo fields
+      let geoJsonToDisplay = fieldGeoJson;
+      
+      // If selectedField has geometry but fieldGeoJson is null (edge case)
+      if (!fieldGeoJson && selectedField?.geometry) {
+        geoJsonToDisplay = selectedField.geometry;
+      }
+      
+      // If selectedField has _geometry (from FieldsPanel formatting)
+      if (!fieldGeoJson && selectedField?._geometry) {
+        geoJsonToDisplay = selectedField._geometry;
+      }
+      
+      console.log('Updating GeoJSON layer with:', geoJsonToDisplay);
+      layerManagerRef.current.updateGeoJsonLayer(geoJsonToDisplay, selectedField);
     }
-    
-    // If selectedField has _geometry (from FieldsPanel formatting)
-    if (!fieldGeoJson && selectedField?._geometry) {
-      geoJsonToDisplay = selectedField._geometry;
-    }
-    
-    console.log('Updating GeoJSON layer with:', geoJsonToDisplay);
-    layerManagerRef.current.updateGeoJsonLayer(geoJsonToDisplay, selectedField);
-  }
-}, [fieldGeoJson, selectedField]);
+  }, [fieldGeoJson, selectedField]);
 
   // Handle heat map data
   useEffect(() => {
@@ -648,8 +690,41 @@ useEffect(() => {
         legendUrls={getLegendUrls()}
       />
 
+      {/* Change Detection Mode Indicator */}
+      {isChangeDetectionMode && (
+        <div className="absolute top-4 left-4 z-20 bg-orange-100 border border-orange-300 rounded-lg p-3">
+          <div className="flex items-center space-x-2">
+            <div className="w-2 h-2 bg-orange-500 rounded-full animate-pulse"></div>
+            <span className="text-sm text-orange-700 font-medium">
+              Change Detection Mode
+            </span>
+            <i className="ri-compare-line text-orange-600"></i>
+          </div>
+          {changeDetectionImages.before && changeDetectionImages.after && (
+            <div className="text-xs text-orange-600 mt-1">
+              Comparing: {new Date(changeDetectionImages.before.date).toLocaleDateString()} 
+              vs {new Date(changeDetectionImages.after.date).toLocaleDateString()}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Change Detection Arrow Indicator */}
+      {showChangeDetectionArrow && (
+        <div className="absolute top-1/2 right-4 transform -translate-y-1/2 z-20">
+          <div className="bg-white bg-opacity-90 backdrop-blur-sm rounded-lg shadow-lg p-2">
+            <div className="flex flex-col items-center space-y-2">
+              <i className="ri-arrow-up-down-line text-2xl text-orange-600"></i>
+              <span className="text-xs text-gray-600 writing-mode-vertical">
+                Swipe Compare
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Active WMS Layers Indicator */}
-      {visibleWMSLayersCount > 0 && (
+      {visibleWMSLayersCount > 0 && !isChangeDetectionMode && (
         <div className="absolute top-4 left-4 z-15 bg-green-100 border border-green-300 rounded-lg p-2">
           <div className="flex items-center space-x-2">
             <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
@@ -706,8 +781,8 @@ useEffect(() => {
         <SearchBar onLocationSelect={handleLocationSelect} />
       )}
 
-      {/* WMS Time Series Slider */}
-      {activeWMSLayer && wmsDateArrays && (
+      {/* WMS Time Series Slider - Hide in change detection mode */}
+      {activeWMSLayer && wmsDateArrays && !isChangeDetectionMode && (
         <WMSTimeSeriesSlider
           dateArray={wmsDateArrays[activeWMSLayer.type] || []}
           layerType={activeWMSLayer.type}
@@ -718,7 +793,7 @@ useEffect(() => {
         />
       )}
 
-      {/* Regular Time Series Slider */}
+      {/* Enhanced Time Series Slider with Change Detection */}
       {showTimeSeriesSlider && timeSeriesData && !activeWMSLayer && (
         <TimeSeriesSlider
           timeSeriesData={timeSeriesData}
@@ -728,11 +803,12 @@ useEffect(() => {
           onIndexChange={handleTimeSeriesSliderChange}
           onPlayToggle={togglePlayPause}
           onSpeedChange={handleSpeedChange}
+          onChangeDetectionToggle={handleChangeDetectionToggle}
         />
       )}
 
       {/* Legend */}
-      {showLegend && (
+      {showLegend && !isChangeDetectionMode && (
         <MapLegend
           analysisInfo={analysisInfo}
           visParams={visParams}
@@ -764,6 +840,32 @@ useEffect(() => {
           </div>
         </div>
       )}
+
+      {/* Change Detection Instructions */}
+      {isChangeDetectionMode && changeDetectionImages.before && changeDetectionImages.after && (
+        <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-20 bg-gradient-to-r from-blue-50 to-orange-50 border border-gray-200 rounded-lg shadow-lg px-4 py-3 max-w-lg">
+          <div className="text-center">
+            <div className="text-sm font-medium text-gray-900 mb-1 flex items-center justify-center">
+              <i className="ri-compare-line mr-2 text-orange-600"></i>
+              Change Detection Active
+            </div>
+            <div className="text-xs text-gray-600 grid grid-cols-2 gap-4">
+              <div className="text-blue-700 bg-blue-100 p-2 rounded">
+                <div className="font-medium">Before Image</div>
+                <div>{new Date(changeDetectionImages.before.date).toLocaleDateString()}</div>
+                <div>NDVI: {changeDetectionImages.before.mean_index_value?.toFixed(3) || 'N/A'}</div>
+              </div>
+              <div className="text-orange-700 bg-orange-100 p-2 rounded">
+                <div className="font-medium">After Image</div>
+                <div>{new Date(changeDetectionImages.after.date).toLocaleDateString()}</div>
+                <div>NDVI: {changeDetectionImages.after.mean_index_value?.toFixed(3) || 'N/A'}</div>
+              </div>
+            </div>
+            <div className="text-xs text-gray-500 mt-2">
+              Use the slider below to toggle between before and after images
+            </div>
+          </div>
+        </div>
+      )}
     </div>
-  );
-}
+  );}
