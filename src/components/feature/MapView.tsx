@@ -518,11 +518,25 @@ export default function MapView({
   }, [currentBaseLayer]);
 
   // Update GeoJSON visualization when fieldGeoJson changes
-  useEffect(() => {
-    if (layerManagerRef.current) {
-      layerManagerRef.current.updateGeoJsonLayer(fieldGeoJson, selectedField);
+useEffect(() => {
+  if (layerManagerRef.current) {
+    // Handle both regular fields and demo fields
+    let geoJsonToDisplay = fieldGeoJson;
+    
+    // If selectedField has geometry but fieldGeoJson is null (edge case)
+    if (!fieldGeoJson && selectedField?.geometry) {
+      geoJsonToDisplay = selectedField.geometry;
     }
-  }, [fieldGeoJson, selectedField]);
+    
+    // If selectedField has _geometry (from FieldsPanel formatting)
+    if (!fieldGeoJson && selectedField?._geometry) {
+      geoJsonToDisplay = selectedField._geometry;
+    }
+    
+    console.log('Updating GeoJSON layer with:', geoJsonToDisplay);
+    layerManagerRef.current.updateGeoJsonLayer(geoJsonToDisplay, selectedField);
+  }
+}, [fieldGeoJson, selectedField]);
 
   // Handle heat map data
   useEffect(() => {

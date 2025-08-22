@@ -21,6 +21,7 @@ export interface LayerTogglePanelProps {
   layerOpacity: LayerOpacity;
   onLayerToggle: (layerType: keyof LayerState, visible: boolean) => void;
   onOpacityChange: (layerType: keyof LayerState, opacity: number) => void;
+  onLayerClick?: (layerType: keyof LayerState) => void; // New prop for zoom functionality
   legendUrls?: {
     ndvi?: string;
     vhi?: string;
@@ -35,6 +36,7 @@ interface LayerConfig {
   color: string;
   icon: string;
   description: string;
+  hasZoom: boolean; // Add flag to indicate which layers support zoom
 }
 
 const layerConfigs: LayerConfig[] = [
@@ -43,21 +45,24 @@ const layerConfigs: LayerConfig[] = [
     label: 'NDVI',
     color: 'text-green-600',
     icon: 'ri-leaf-line',
-    description: 'Projected Yield (Tons per Hectare)'
+    description: 'Projected Yield (Tons per Hectare)',
+    hasZoom: true
   },
   {
     key: 'vhi',
     label: 'VHI',
     color: 'text-blue-600',
     icon: 'ri-heart-pulse-line',
-    description: 'Vegetation Health Index'
+    description: 'Vegetation Health Index',
+    hasZoom: true
   },
   {
     key: 'lst',
     label: 'LST',
     color: 'text-red-600',
     icon: 'ri-temp-hot-line',
-    description: 'Land Surface Temperature'
+    description: 'Land Surface Temperature',
+    hasZoom: true
   }
 ];
 
@@ -66,6 +71,7 @@ export default function LayerTogglePanel({
   layerOpacity,
   onLayerToggle,
   onOpacityChange,
+  onLayerClick,
   legendUrls = {},
   className = ''
 }: LayerTogglePanelProps) {
@@ -84,6 +90,13 @@ export default function LayerTogglePanel({
   // Handle opacity change
   const handleOpacityChange = (layerKey: keyof LayerState, value: number) => {
     onOpacityChange(layerKey, value / 100);
+  };
+
+  // Handle layer click for zoom functionality
+  const handleLayerClick = (layerKey: keyof LayerState) => {
+    if (onLayerClick) {
+      onLayerClick(layerKey);
+    }
   };
 
   return (
@@ -138,7 +151,7 @@ export default function LayerTogglePanel({
               <div key={config.key} className="space-y-2">
                 {/* Layer Toggle */}
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
+                  <div className="flex items-center space-x-3 flex-1">
                     <button
                       onClick={() => handleLayerToggle(config.key)}
                       className={`flex items-center justify-center w-8 h-8 rounded-full transition-all duration-200 ${
@@ -149,9 +162,15 @@ export default function LayerTogglePanel({
                     >
                       <i className={config.icon}></i>
                     </button>
-                    <div>
-                      <div className={`text-sm font-medium ${layerVisibility[config.key] ? config.color : 'text-gray-500'}`}>
+                    <div 
+                      className="flex-1 cursor-pointer"
+                      onClick={() => handleLayerClick(config.key)}
+                    >
+                      <div className={`text-sm font-medium ${layerVisibility[config.key] ? config.color : 'text-gray-500'} hover:opacity-80 transition-opacity`}>
                         {config.label}
+                        {config.hasZoom && (
+                          <i className="ri-map-pin-line ml-1 text-xs opacity-60" title="Click to zoom to Philippines"></i>
+                        )}
                       </div>
                       <div className="text-xs text-gray-500">{config.description}</div>
                     </div>
@@ -160,6 +179,16 @@ export default function LayerTogglePanel({
                     <span className="text-xs text-gray-500">
                       {Math.round(layerOpacity[config.key] * 100)}%
                     </span>
+                    {/* Zoom button */}
+                    {config.hasZoom && (
+                      <button
+                        onClick={() => handleLayerClick(config.key)}
+                        className="text-gray-400 hover:text-blue-600 transition-colors p-1"
+                        title="Zoom to Philippines"
+                      >
+                        <i className="ri-zoom-in-line text-sm"></i>
+                      </button>
+                    )}
                   </div>
                 </div>
 

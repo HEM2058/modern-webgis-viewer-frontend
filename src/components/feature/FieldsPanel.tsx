@@ -230,14 +230,26 @@ export default function FieldsPanel({
     }
   };
 
-  const handleFieldClick = (field: any) => {
-    if (onFieldSelect) {
+ const handleFieldClick = (field: any) => {
+  if (onFieldSelect) {
+    // For demo fields, we need to pass the geometry correctly
+    if (field.isDemo && field.geometry) {
+      // Create a properly formatted field object
+      const formattedField = {
+        ...field,
+        // Ensure the geometry is available for analysis
+        _geometry: field.geometry
+      };
+      onFieldSelect(formattedField);
+    } else {
       onFieldSelect(field);
     }
-    if (onAnalysisPanelToggle) {
-      onAnalysisPanelToggle();
-    }
-  };
+  }
+  if (onAnalysisPanelToggle) {
+    onAnalysisPanelToggle();
+  }
+};
+
 
   // Check if field is selected
   const isFieldSelected = (field: any) => {

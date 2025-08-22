@@ -50,6 +50,9 @@ export default function Home() {
   const [drawnField, setDrawnField] = useState(null);
   const [showSaveModal, setShowSaveModal] = useState(false);
 
+  // Track if analysis panel should be available (but not auto-opened)
+  const [analysisPanelReady, setAnalysisPanelReady] = useState(false);
+
   // WMS Layer Management Hook
   const {
     layerStates: wmsLayerStates,
@@ -65,7 +68,6 @@ export default function Home() {
     dateArrays: wmsDateArrays,
     onDateChange: (date, layerType) => {
       console.log(`WMS Layer ${layerType} date changed to:`, date);
-      // The MapView component will handle the actual layer updates through MapLayerManager
     },
     playbackSpeed: 1000,
   });
@@ -88,10 +90,57 @@ export default function Home() {
     }
   };
 
+  // Handle file upload from Sidebar
+  const handleFileUpload = (geoJsonFeature) => {
+    console.log('File uploaded with geometry:', geoJsonFeature);
+    
+    const timestamp = new Date().toLocaleTimeString('en-US', { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+    
+    const uploadedField = {
+      farm_id: `uploaded_field_${Date.now()}`,
+      farm_name: `Uploaded Field (${timestamp})`,
+      isDemo: true,
+      isUnsaved: true,
+      geometry: geoJsonFeature
+    };
+    
+    // Set all the states properly
+    setDrawnField(uploadedField);
+    setSelectedField(uploadedField);
+    setFieldGeoJson(geoJsonFeature);
+    
+    // Panel should be ready but not auto-opened for uploaded files
+    setAnalysisPanelOpen(false);
+    setAnalysisPanelReady(true);
+    
+    // Clear any previous analysis results
+    setAnalysisResults(null);
+    setIndexData(null);
+    setVhiData(null);
+    setIndexHeatMapData(null);
+    setTimeSeriesData(null);
+    
+    console.log('Uploaded field setup complete, analysis panel ready');
+  };
+
   // Handlers from Sidebar
   const handleFieldSelect = async (field) => {
+    console.log('Field selected:', field);
+    
     setSelectedField(field);
-    setAnalysisPanelOpen(true);
+    
+    // Only auto-open for saved fields, not drawn/uploaded fields
+    if (!field.isDemo) {
+      setAnalysisPanelOpen(true);
+      setAnalysisPanelReady(true);
+    } else {
+      // For demo fields, don't auto-open but make ready if geometry exists
+      setAnalysisPanelOpen(false);
+      setAnalysisPanelReady(field.geometry ? true : false);
+    }
     
     // Clear previous analysis results when selecting new field
     setAnalysisResults(null);
@@ -99,47 +148,94 @@ export default function Home() {
     setVhiData(null);
     setIndexHeatMapData(null);
     setTimeSeriesData(null);
-    setFieldGeoJson(null);
     
     // Hide all WMS layers when selecting a new field to avoid confusion
     hideAllWMSLayers();
     
-    // Fetch GeoJSON for the selected field
-    if (field && field.farm_id) {
+    // Handle geometry for different field types
+    if (field && field.isDemo && field.geometry) {
+      // For demo/drawn/uploaded fields, use the geometry directly
+      console.log('Setting geometry for demo field:', field.geometry);
+      setFieldGeoJson(field.geometry);
+    } else if (field && field.farm_id && !field.isDemo) {
+      // For regular saved fields, fetch GeoJSON from API
+      setFieldGeoJson(null); // Clear previous geometry first
       await fetchFieldGeoJson(field.farm_id);
+    } else {
+      setFieldGeoJson(null);
     }
   };
 
   // Drawing mode handlers
   const handleDrawingModeToggle = (isDrawing) => {
     setIsDrawingMode(isDrawing);
-    if (!isDrawing) {
-      setDrawnField(null);
-    }
     
-    // Hide WMS layers during drawing mode for better visibility
     if (isDrawing) {
+      // Starting drawing mode - close analysis panel and reset states
+      setAnalysisPanelOpen(false);
+      setAnalysisPanelReady(false);
+      setDrawnField(null);
       stopAllPlayback();
+      console.log('Drawing mode started - analysis panel disabled');
+    } else if (!isDrawing) {
+      // Exiting drawing mode without drawing - clean up
+      setDrawnField(null);
+      console.log('Drawing mode ended');
     }
   };
 
   // Handle field drawn on map
   const handleFieldDrawn = (geoJsonFeature) => {
-    console.log('Field drawn:', geoJsonFeature);
+    console.log('Field drawn with geometry:', geoJsonFeature);
+    
+    // Generate a more descriptive name with timestamp
+    const timestamp = new Date().toLocaleTimeString('en-US', { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
     
     const demoField = {
       farm_id: 'demo_field',
-      farm_name: 'Demo Field',
+      farm_name: `Drawn Field (${timestamp})`,
       isDemo: true,
       isUnsaved: true,
       geometry: geoJsonFeature
     };
     
+    // Set all the states properly
     setDrawnField(demoField);
     setIsDrawingMode(false);
     setSelectedField(demoField);
+    
+    // Set the fieldGeoJson directly to the drawn geometry
     setFieldGeoJson(geoJsonFeature);
-    setAnalysisPanelOpen(true);
+    
+    // Ensure panel stays closed and only becomes ready after drawing is complete
+    setAnalysisPanelOpen(false);
+    
+    // Use setTimeout to ensure drawing mode is fully exited before making panel ready
+    setTimeout(() => {
+      setAnalysisPanelReady(true);
+      console.log('Analysis panel is now ready for manual opening');
+    }, 100);
+    
+    // Clear any previous analysis results
+    setAnalysisResults(null);
+    setIndexData(null);
+    setVhiData(null);
+    setIndexHeatMapData(null);
+    setTimeSeriesData(null);
+    
+    console.log('Demo field setup complete, analysis panel will be ready shortly');
+  };
+
+  // Handle analysis panel toggle with validation
+  const handleAnalysisPanelToggle = () => {
+    if (!analysisPanelReady || !selectedField) {
+      console.log('Analysis panel not ready or no field selected');
+      return;
+    }
+    setAnalysisPanelOpen(!analysisPanelOpen);
   };
 
   // Handle save demo field
@@ -153,6 +249,14 @@ export default function Home() {
     setSelectedField(null);
     setFieldGeoJson(null);
     setAnalysisPanelOpen(false);
+    setAnalysisPanelReady(false);
+    
+    // Clear analysis data
+    setAnalysisResults(null);
+    setIndexData(null);
+    setVhiData(null);
+    setIndexHeatMapData(null);
+    setTimeSeriesData(null);
   };
 
   // WMS Layer control handlers
@@ -170,7 +274,18 @@ export default function Home() {
 
   // Updated handler to receive analysis data from AnalysisPanel
   const handleAnalysisRun = async (analysisType, params) => {
-    if (!selectedField) return;
+    if (!selectedField) {
+      console.error('No field selected for analysis');
+      return;
+    }
+
+    if (!fieldGeoJson) {
+      console.error('No geometry available for analysis');
+      return;
+    }
+
+    console.log('Running analysis:', analysisType, 'with params:', params);
+    console.log('Using geometry:', fieldGeoJson);
 
     setProcessing(true);
     setProcessingType(getProcessingMessage(analysisType, params));
@@ -320,6 +435,7 @@ export default function Home() {
     setSelectedField(null);
     setFieldGeoJson(null);
     setAnalysisPanelOpen(false);
+    setAnalysisPanelReady(false);
     
     // Hide all WMS layers when closing analysis
     hideAllWMSLayers();
@@ -335,6 +451,7 @@ export default function Home() {
         setSelectedField(null);
         setFieldGeoJson(null);
         setAnalysisPanelOpen(false);
+        setAnalysisPanelReady(false);
         setAnalysisResults(null);
         setIndexHeatMapData(null);
         setTimeSeriesData(null);
@@ -364,6 +481,7 @@ export default function Home() {
         drawnField={drawnField}
         onSaveDemoField={handleSaveDemoField}
         onDeleteDemoField={handleDeleteDemoField}
+        onFileUpload={handleFileUpload}
       />
       
       {/* Main Content */}
@@ -383,9 +501,15 @@ export default function Home() {
             className="h-8 w-auto"
           />
 
+          {/* Analysis button with better state management */}
           <button 
-            onClick={() => setAnalysisPanelOpen(!analysisPanelOpen)}
-            className="p-2 rounded-lg hover:bg-gray-100"
+            onClick={handleAnalysisPanelToggle}
+            className={`p-2 rounded-lg transition-colors ${
+              analysisPanelReady && selectedField 
+                ? 'hover:bg-gray-100 text-gray-900' 
+                : 'text-gray-400 cursor-not-allowed'
+            }`}
+            disabled={!analysisPanelReady || !selectedField}
           >
             <i className="ri-bar-chart-line text-xl"></i>
           </button>
@@ -402,6 +526,25 @@ export default function Home() {
                   <div className="font-medium">{processingType}</div>
                   <div className="text-gray-500">Please wait...</div>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Demo field ready indicator with click prompt */}
+          {selectedField?.isDemo && fieldGeoJson && analysisPanelReady && (
+            <div className="absolute top-4 right-4 z-30 bg-blue-100 border border-blue-300 rounded-lg p-3">
+              <div className="flex items-center space-x-2">
+                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                <span className="text-sm text-blue-700 font-medium">
+                  {selectedField.farm_name} Ready
+                </span>
+                <button
+                  onClick={handleAnalysisPanelToggle}
+                  className="text-blue-600 hover:text-blue-800 transition-colors"
+                  title="Open Analysis Panel"
+                >
+                  <i className="ri-arrow-right-line text-lg"></i>
+                </button>
               </div>
             </div>
           )}
@@ -443,11 +586,11 @@ export default function Home() {
         </div>
       </div>
       
-      {/* Analysis Panel */}
-      {selectedField && (
+      {/* Analysis Panel - Only render when ready and field selected */}
+      {analysisPanelReady && selectedField && (
         <AnalysisPanel 
           isOpen={analysisPanelOpen} 
-          onToggle={() => setAnalysisPanelOpen(!analysisPanelOpen)}
+          onToggle={handleAnalysisPanelToggle}
           selectedField={selectedField}
           fieldGeoJson={fieldGeoJson}
           onAnalysisRun={handleAnalysisRun}
@@ -467,7 +610,7 @@ export default function Home() {
         />
       )}
 
-      {/* Save Field Modal */}
+      {/* Save Field Modal - You'll need to create this component */}
       {showSaveModal && (
         <SaveFieldModal
           drawnField={drawnField}
@@ -479,137 +622,6 @@ export default function Home() {
           }}
         />
       )}
-    </div>
-  );
-}
-
-// Save Field Modal Component (keeping existing implementation)
-function SaveFieldModal({ drawnField, onClose, onSave }) {
-  const [formValues, setFormValues] = useState({
-    name: '',
-    farmer_id: '',
-    region: '',
-    province: '',
-    municipality: '',
-    barangay: '',
-    total_land_area: '',
-    ndvi_notification: '0',
-    is_jas: '0'
-  });
-  const [isLoading, setIsLoading] = useState(false);
-
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormValues(prev => ({
-      ...prev,
-      [name]: value
-    }));
-  };
-
-  const handleSaveField = async () => {
-    if (!formValues.name.trim()) {
-      alert('Please enter a field name');
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      const geometry = drawnField.geometry;
-      
-      const payload = {
-        name: formValues.name,
-        farmer_id: parseInt(formValues.farmer_id) || 0,
-        region: formValues.region,
-        province: formValues.province,
-        municipality: formValues.municipality,
-        barangay: formValues.barangay,
-        total_land_area: parseFloat(formValues.total_land_area) || 0,
-        ndvi_notification: parseInt(formValues.ndvi_notification) || 0,
-        is_jas: parseInt(formValues.is_jas) || 0,
-        geometry: geometry
-      };
-
-      console.log('Saving field with payload:', payload);
-
-      const response = await axios.post('https://digisaka.app/api/mobile/explorer-fields-create', payload, {
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-
-      console.log('Field saved successfully:', response.data);
-      onSave(response.data);
-    } catch (error) {
-      console.error('Error saving field:', error);
-      alert('Failed to save field. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const closeSaveModal = () => {
-    if (!isLoading) {
-      onClose();
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 flex items-center justify-center z-50">
-      <div className="absolute inset-0 bg-black opacity-50" onClick={closeSaveModal}></div>
-      <div className="relative bg-white rounded-lg p-4 shadow-lg w-96 z-10">
-        <h4 className="text-md font-semibold text-green-700 mb-3">Save Field</h4>
-        <form className="space-y-2">
-          {[
-            { label: 'Field Name', name: 'name', type: 'text', required: true },
-            { label: 'Farmer ID', name: 'farmer_id', type: 'number' },
-            { label: 'Region', name: 'region', type: 'text' },
-            { label: 'Province', name: 'province', type: 'text' },
-            { label: 'Municipality', name: 'municipality', type: 'text' },
-            { label: 'Barangay', name: 'barangay', type: 'text' },
-            { label: 'Land Area (ha)', name: 'total_land_area', type: 'number' },
-            { label: 'NDVI Notification (1 = on)', name: 'ndvi_notification', type: 'number' },
-            { label: 'JAS Certified (1 = yes)', name: 'is_jas', type: 'number' }
-          ].map(({ label, name, type, required }) => (
-            <div key={name}>
-              <label className="block text-gray-700 text-sm">
-                {label}{required && <span className="text-red-500">*</span>}:
-              </label>
-              <input
-                type={type}
-                name={name}
-                value={formValues[name]}
-                onChange={handleInputChange}
-                className="w-full p-1.5 text-sm bg-white border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 text-gray-900"
-                required={required}
-                disabled={isLoading}
-              />
-            </div>
-          ))}
-        </form>
-        <div className="flex justify-end space-x-2 mt-3">
-          <button
-            onClick={closeSaveModal}
-            disabled={isLoading}
-            className="w-full p-1.5 text-sm bg-white border border-gray-300 rounded-md text-gray-900 hover:bg-gray-50 disabled:opacity-50"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSaveField}
-            disabled={isLoading}
-            className="w-full p-1.5 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 flex items-center justify-center"
-          >
-            {isLoading ? (
-              <>
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                Saving...
-              </>
-            ) : (
-              'Save'
-            )}
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
