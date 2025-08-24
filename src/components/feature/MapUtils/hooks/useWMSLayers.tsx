@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 
 export interface WMSLayerData {
-  ndvi: string[];
+  yield: string[];
   vhi: string[];
   lst: string[];
 }
 
 export interface WMSLayerState {
-  ndvi: {
+  yield: {
     visible: boolean;
     currentDate: string;
     isPlaying: boolean;
@@ -29,7 +29,7 @@ export interface WMSLayerState {
 
 export interface UseWMSLayersProps {
   dateArrays: WMSLayerData;
-  onDateChange?: (date: string, layerType: 'ndvi' | 'vhi' | 'lst') => void;
+  onDateChange?: (date: string, layerType: 'yield' | 'vhi' | 'lst') => void;
   playbackSpeed?: number;
 }
 
@@ -39,9 +39,9 @@ export function useWMSLayers({
   playbackSpeed = 1000
 }: UseWMSLayersProps) {
   const [layerStates, setLayerStates] = useState<WMSLayerState>({
-    ndvi: {
+    yield: {
       visible: false,
-      currentDate: dateArrays.ndvi[0] || '',
+      currentDate: dateArrays.yield[0] || '',
       isPlaying: false,
       currentIndex: 0,
     },
@@ -61,13 +61,13 @@ export function useWMSLayers({
 
   // Refs for intervals
   const intervalsRef = useRef<{
-    ndvi?: NodeJS.Timeout;
+    yield?: NodeJS.Timeout;
     vhi?: NodeJS.Timeout;
     lst?: NodeJS.Timeout;
   }>({});
 
   // Toggle layer visibility
-  const toggleLayerVisibility = (layerType: 'ndvi' | 'vhi' | 'lst') => {
+  const toggleLayerVisibility = (layerType: 'yield' | 'vhi' | 'lst') => {
     setLayerStates(prev => ({
       ...prev,
       [layerType]: {
@@ -85,7 +85,7 @@ export function useWMSLayers({
   };
 
   // Set layer date by index
-  const setLayerDateByIndex = (layerType: 'ndvi' | 'vhi' | 'lst', index: number) => {
+  const setLayerDateByIndex = (layerType: 'yield' | 'vhi' | 'lst', index: number) => {
     const dates = dateArrays[layerType];
     if (dates && dates[index]) {
       const newDate = dates[index];
@@ -105,7 +105,7 @@ export function useWMSLayers({
   };
 
   // Set layer date directly
-  const setLayerDate = (layerType: 'ndvi' | 'vhi' | 'lst', date: string) => {
+  const setLayerDate = (layerType: 'yield' | 'vhi' | 'lst', date: string) => {
     const dates = dateArrays[layerType];
     const index = dates.indexOf(date);
     if (index !== -1) {
@@ -114,7 +114,7 @@ export function useWMSLayers({
   };
 
   // Toggle play/pause for a layer
-  const toggleLayerPlayback = (layerType: 'ndvi' | 'vhi' | 'lst') => {
+  const toggleLayerPlayback = (layerType: 'yield' | 'vhi' | 'lst') => {
     const currentState = layerStates[layerType];
     const newPlayingState = !currentState.isPlaying;
 
@@ -158,15 +158,15 @@ export function useWMSLayers({
   };
 
   // Get currently visible layers
-  const getVisibleLayers = (): Array<'ndvi' | 'vhi' | 'lst'> => {
-    return (['ndvi', 'vhi', 'lst'] as const).filter(
+  const getVisibleLayers = (): Array<'yield' | 'vhi' | 'lst'> => {
+    return (['yield', 'vhi', 'lst'] as const).filter(
       layer => layerStates[layer].visible
     );
   };
 
   // Get currently playing layers
-  const getPlayingLayers = (): Array<'ndvi' | 'vhi' | 'lst'> => {
-    return (['ndvi', 'vhi', 'lst'] as const).filter(
+  const getPlayingLayers = (): Array<'yield' | 'vhi' | 'lst'> => {
+    return (['yield', 'vhi', 'lst'] as const).filter(
       layer => layerStates[layer].isPlaying
     );
   };
@@ -182,7 +182,7 @@ export function useWMSLayers({
     });
 
     setLayerStates(prev => ({
-      ndvi: { ...prev.ndvi, isPlaying: false },
+      yield: { ...prev.yield, isPlaying: false },
       vhi: { ...prev.vhi, isPlaying: false },
       lst: { ...prev.lst, isPlaying: false },
     }));
@@ -192,7 +192,7 @@ export function useWMSLayers({
   const hideAllLayers = () => {
     stopAllPlayback();
     setLayerStates(prev => ({
-      ndvi: { ...prev.ndvi, visible: false },
+      yield: { ...prev.yield, visible: false },
       vhi: { ...prev.vhi, visible: false },
       lst: { ...prev.lst, visible: false },
     }));
@@ -210,9 +210,9 @@ export function useWMSLayers({
   // Update states when date arrays change
   useEffect(() => {
     setLayerStates(prev => ({
-      ndvi: {
-        ...prev.ndvi,
-        currentDate: dateArrays.ndvi[0] || prev.ndvi.currentDate,
+      yield: {
+        ...prev.yield,
+        currentDate: dateArrays.yield[0] || prev.yield.currentDate,
         currentIndex: 0,
         isPlaying: false,
       },

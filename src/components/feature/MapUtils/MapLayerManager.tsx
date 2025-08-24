@@ -13,7 +13,7 @@ export interface WMSLayerConfig {
 }
 
 export interface LayerVisibilityState {
-  ndvi: boolean;
+  yield: boolean;
   vhi: boolean;
   lst: boolean;
   heatMap: boolean;
@@ -21,7 +21,7 @@ export interface LayerVisibilityState {
 }
 
 export interface LayerOpacityState {
-  ndvi: number;
+  yield: number;
   vhi: number;
   lst: number;
   heatMap: number;
@@ -35,13 +35,13 @@ export class MapLayerManager {
   private timeSeriesLayer: TileLayer | null = null;
   
   // WMS layers
-  private ndviLayer: ImageLayer<ImageWMS> | null = null;
+  private yieldLayer: ImageLayer<ImageWMS> | null = null;
   private vhiLayer: ImageLayer<ImageWMS> | null = null;
   private lstLayer: ImageLayer<ImageWMS> | null = null;
 
   // Layer configurations
   private readonly wmsConfigs = {
-    ndvi: {
+    yield: {
       url: 'https://backend.digisaka.com/geoserver/NDVI_Yield/wms',
       layers: 'NDVI_Yield:database_for_webgis',
       styles: 'ndvi',
@@ -97,23 +97,34 @@ export class MapLayerManager {
   private initializeWMSLayers() {
     console.log('MapLayerManager: Initializing WMS layers...');
 
-    // NDVI Layer - Using ImageWMS instead of TileWMS
-    this.ndviLayer = new ImageLayer({
+    // Yield Layer - Enhanced with better caching control
+    this.yieldLayer = new ImageLayer({
       source: new ImageWMS({
-        url: this.wmsConfigs.ndvi.url,
+        url: this.wmsConfigs.yield.url,
         params: {
-          'LAYERS': this.wmsConfigs.ndvi.layers,
+          'LAYERS': this.wmsConfigs.yield.layers,
           'FORMAT': 'image/png',
           'TRANSPARENT': true,
-          'TIME': this.wmsConfigs.ndvi.defaultTime,
-          'STYLES': this.wmsConfigs.ndvi.styles,
+          'TIME': this.wmsConfigs.yield.defaultTime,
+          'STYLES': this.wmsConfigs.yield.styles || '',
           'VERSION': '1.1.1',
-          'SRS': 'EPSG:3857'
+          'SRS': 'EPSG:3857',
+          'TILED': true,
+          'CQL_FILTER': undefined // Remove any default filters
         },
         serverType: 'geoserver',
         crossOrigin: 'anonymous',
+        // Disable caching to ensure fresh requests
+        imageLoadFunction: undefined,
+        // Add random parameter to prevent caching issues
+        imageLoadFunction: (image, src) => {
+          const imgElement = image.getImage() as HTMLImageElement;
+          const separator = src.includes('?') ? '&' : '?';
+          const cacheBuster = `${separator}_=${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          imgElement.src = src + cacheBuster;
+        }
       }),
-      visible: this.wmsConfigs.ndvi.visible,
+      visible: this.wmsConfigs.yield.visible,
       opacity: 0.8,
     });
 
@@ -128,7 +139,8 @@ export class MapLayerManager {
           'TIME': this.wmsConfigs.vhi.defaultTime,
           'STYLES': this.wmsConfigs.vhi.styles,
           'VERSION': '1.1.1',
-          'SRS': 'EPSG:3857'
+          'SRS': 'EPSG:3857',
+          'TILED': true
         },
         serverType: 'geoserver',
         crossOrigin: 'anonymous',
@@ -148,7 +160,8 @@ export class MapLayerManager {
           'TIME': this.wmsConfigs.lst.defaultTime,
           'STYLES': this.wmsConfigs.lst.styles,
           'VERSION': '1.1.1',
-          'SRS': 'EPSG:3857'
+          'SRS': 'EPSG:3857',
+          'TILED': true
         },
         serverType: 'geoserver',
         crossOrigin: 'anonymous',
@@ -158,11 +171,11 @@ export class MapLayerManager {
     });
 
     // Add WMS layers to map with proper z-index
-    this.ndviLayer.setZIndex(100);
+    this.yieldLayer.setZIndex(100);
     this.vhiLayer.setZIndex(101);
     this.lstLayer.setZIndex(102);
 
-    this.map.addLayer(this.ndviLayer);
+    this.map.addLayer(this.yieldLayer);
     this.map.addLayer(this.vhiLayer);
     this.map.addLayer(this.lstLayer);
 
@@ -235,48 +248,111 @@ export class MapLayerManager {
     }
   }
 
-  // Toggle WMS layer visibility with proper logging
-  toggleWMSLayer(layerType: 'ndvi' | 'vhi' | 'lst', visible: boolean) {
+  // UPDATED: Toggle WMS layer visibility - Only one layer active at a time with zoom level 9
+  toggleWMSLayer(layerType: 'yield' | 'vhi' | 'lst', visible: boolean) {
     console.log(`MapLayerManager: Toggling ${layerType} layer to ${visible ? 'visible' : 'hidden'}`);
     
-    const layer = this.getWMSLayer(layerType);
-    if (layer) {
-      layer.setVisible(visible);
+    const targetLayer = this.getWMSLayer(layerType);
+    if (!targetLayer) {
+      console.error(`MapLayerManager: ${layerType} layer not found!`);
+      return;
+    }
+
+    if (visible) {
+      // Hide all other WMS layers first (mutual exclusivity)
+      const allLayers: ('yield' | 'vhi' | 'lst')[] = ['yield', 'vhi', 'lst'];
+      
+      allLayers.forEach(otherLayerType => {
+        if (otherLayerType !== layerType) {
+          const otherLayer = this.getWMSLayer(otherLayerType);
+          if (otherLayer && otherLayer.getVisible()) {
+            console.log(`MapLayerManager: Hiding ${otherLayerType} layer to show ${layerType}`);
+            otherLayer.setVisible(false);
+          }
+        }
+      });
+
+      // Show the target layer
+      targetLayer.setVisible(true);
+      
+      // Set zoom to level 9 when showing any WMS layer
+      const currentZoom = this.map.getView().getZoom() || 16;
+      console.log(`MapLayerManager: Current zoom: ${currentZoom}, setting to 9 for WMS layer ${layerType}`);
+      
+      this.map.getView().animate({
+        zoom: 9,
+        duration: 500
+      });
       
       // Force refresh the layer to trigger network requests
-      if (visible) {
-        const source = layer.getSource() as ImageWMS;
-        if (source) {
-          console.log(`MapLayerManager: Refreshing ${layerType} layer source`);
-          source.refresh();
+      const source = targetLayer.getSource() as ImageWMS;
+      if (source) {
+        console.log(`MapLayerManager: Refreshing ${layerType} layer source`);
+        
+        // For yield layer, add additional cache-busting
+        if (layerType === 'yield') {
+          const currentParams = source.getParams();
+          const timestamp = Date.now();
+          const random = Math.random().toString(36).substr(2, 9);
           
-          // Log the current WMS parameters for debugging
-          const params = source.getParams();
-          console.log(`MapLayerManager: ${layerType} WMS params:`, params);
+          // Update params with cache buster
+          source.updateParams({
+            ...currentParams,
+            '_t': timestamp,
+            '_r': random
+          });
           
-          // Generate sample URL for debugging
-          const url = source.getUrl();
-          console.log(`MapLayerManager: ${layerType} WMS base URL:`, url);
+          console.log(`MapLayerManager: ${layerType} cache-busted params:`, source.getParams());
+        }
+        
+        // Force refresh
+        source.refresh();
+        
+        // Log the current WMS parameters for debugging
+        const params = source.getParams();
+        console.log(`MapLayerManager: ${layerType} WMS params:`, params);
+        
+        // Generate sample URL for debugging
+        const url = source.getUrl();
+        console.log(`MapLayerManager: ${layerType} WMS base URL:`, url);
+        
+        // Log the constructed request URL
+        const extent = this.map.getView().calculateExtent();
+        const resolution = this.map.getView().getResolution();
+        const projection = this.map.getView().getProjection();
+        
+        if (extent && resolution && projection) {
+          console.log(`MapLayerManager: ${layerType} request extent:`, extent);
+          console.log(`MapLayerManager: ${layerType} resolution:`, resolution);
         }
       }
-      
-      // Trigger map render
-      this.map.render();
     } else {
-      console.error(`MapLayerManager: ${layerType} layer not found!`);
+      // Simply hide the layer
+      targetLayer.setVisible(false);
     }
+    
+    // Trigger map render
+    this.map.render();
   }
 
-  // Update WMS layer time parameter
-  updateWMSLayerTime(layerType: 'ndvi' | 'vhi' | 'lst', dateTime: string) {
+  // Update WMS layer time parameter with enhanced cache busting
+  updateWMSLayerTime(layerType: 'yield' | 'vhi' | 'lst', dateTime: string) {
     console.log(`MapLayerManager: Updating ${layerType} layer time to: ${dateTime}`);
     
     const layer = this.getWMSLayer(layerType);
     if (layer && layer.getSource()) {
       const source = layer.getSource() as ImageWMS;
       
-      // Update the TIME parameter
-      source.updateParams({ 'TIME': dateTime });
+      const updateParams: any = { 'TIME': dateTime };
+      
+      // Add cache busting for yield layer
+      if (layerType === 'yield') {
+        updateParams['_t'] = Date.now();
+        updateParams['_r'] = Math.random().toString(36).substr(2, 9);
+      }
+      
+      // Update the TIME parameter and cache busters
+      source.updateParams(updateParams);
       
       console.log(`MapLayerManager: ${layerType} layer time updated, params:`, source.getParams());
       
@@ -291,7 +367,7 @@ export class MapLayerManager {
   }
 
   // Set WMS layer opacity
-  setWMSLayerOpacity(layerType: 'ndvi' | 'vhi' | 'lst', opacity: number) {
+  setWMSLayerOpacity(layerType: 'yield' | 'vhi' | 'lst', opacity: number) {
     console.log(`MapLayerManager: Setting ${layerType} layer opacity to: ${opacity}`);
     
     const layer = this.getWMSLayer(layerType);
@@ -302,10 +378,10 @@ export class MapLayerManager {
   }
 
   // Get WMS layer by type
-  private getWMSLayer(layerType: 'ndvi' | 'vhi' | 'lst'): ImageLayer<ImageWMS> | null {
+  private getWMSLayer(layerType: 'yield' | 'vhi' | 'lst'): ImageLayer<ImageWMS> | null {
     switch (layerType) {
-      case 'ndvi':
-        return this.ndviLayer;
+      case 'yield':
+        return this.yieldLayer;
       case 'vhi':
         return this.vhiLayer;
       case 'lst':
@@ -317,24 +393,32 @@ export class MapLayerManager {
   }
 
   // Get WMS legend URL
-  getWMSLegendUrl(layerType: 'ndvi' | 'vhi' | 'lst'): string {
+  getWMSLegendUrl(layerType: 'yield' | 'vhi' | 'lst'): string {
     const config = this.wmsConfigs[layerType];
     return `${config.url}?REQUEST=GetLegendGraphic&FORMAT=image/png&WIDTH=20&HEIGHT=20&LAYER=${config.layers}&STYLE=${config.styles}`;
   }
 
-  // Check if any WMS layer is visible
+  // UPDATED: Check if any WMS layer is visible (now only one can be visible at a time)
   isAnyWMSLayerVisible(): boolean {
     return (
-      (this.ndviLayer?.getVisible() ?? false) ||
+      (this.yieldLayer?.getVisible() ?? false) ||
       (this.vhiLayer?.getVisible() ?? false) ||
       (this.lstLayer?.getVisible() ?? false)
     );
   }
 
+  // UPDATED: Get the currently active WMS layer (since only one can be active)
+  getActiveWMSLayer(): 'yield' | 'vhi' | 'lst' | null {
+    if (this.yieldLayer?.getVisible()) return 'yield';
+    if (this.vhiLayer?.getVisible()) return 'vhi';
+    if (this.lstLayer?.getVisible()) return 'lst';
+    return null;
+  }
+
   // Get current layer visibility state
   getLayerVisibility(): LayerVisibilityState {
     return {
-      ndvi: this.ndviLayer?.getVisible() ?? false,
+      yield: this.yieldLayer?.getVisible() ?? false,
       vhi: this.vhiLayer?.getVisible() ?? false,
       lst: this.lstLayer?.getVisible() ?? false,
       heatMap: (this.heatMapLayer?.getOpacity() ?? 0) > 0,
@@ -345,7 +429,7 @@ export class MapLayerManager {
   // Get current layer opacity state
   getLayerOpacity(): LayerOpacityState {
     return {
-      ndvi: this.ndviLayer?.getOpacity() ?? 0.8,
+      yield: this.yieldLayer?.getOpacity() ?? 0.8,
       vhi: this.vhiLayer?.getOpacity() ?? 0.8,
       lst: this.lstLayer?.getOpacity() ?? 0.8,
       heatMap: this.heatMapLayer?.getOpacity() ?? 0.7,
@@ -353,11 +437,28 @@ export class MapLayerManager {
     };
   }
 
+  // UPDATED: Hide all WMS layers
+  hideAllWMSLayers() {
+    console.log('MapLayerManager: Hiding all WMS layers');
+    
+    const allLayers: ('yield' | 'vhi' | 'lst')[] = ['yield', 'vhi', 'lst'];
+    
+    allLayers.forEach(layerType => {
+      const layer = this.getWMSLayer(layerType);
+      if (layer && layer.getVisible()) {
+        layer.setVisible(false);
+        console.log(`MapLayerManager: Hidden ${layerType} layer`);
+      }
+    });
+    
+    this.map.render();
+  }
+
   // Debug method to log current WMS layer states
   debugWMSLayers() {
     console.log('MapLayerManager: Current WMS layer states:');
-    ['ndvi', 'vhi', 'lst'].forEach(layerType => {
-      const layer = this.getWMSLayer(layerType as 'ndvi' | 'vhi' | 'lst');
+    ['yield', 'vhi', 'lst'].forEach(layerType => {
+      const layer = this.getWMSLayer(layerType as 'yield' | 'vhi' | 'lst');
       if (layer) {
         const source = layer.getSource() as ImageWMS;
         console.log(`${layerType}:`, {
@@ -366,6 +467,20 @@ export class MapLayerManager {
           params: source.getParams(),
           url: source.getUrl()
         });
+      }
+    });
+  }
+
+  // Force refresh all visible WMS layers (utility method)
+  refreshAllVisibleWMSLayers() {
+    ['yield', 'vhi', 'lst'].forEach(layerType => {
+      const layer = this.getWMSLayer(layerType as 'yield' | 'vhi' | 'lst');
+      if (layer && layer.getVisible()) {
+        const source = layer.getSource() as ImageWMS;
+        if (source) {
+          console.log(`Refreshing ${layerType} layer`);
+          source.refresh();
+        }
       }
     });
   }
@@ -488,9 +603,9 @@ export class MapLayerManager {
       this.map.removeLayer(this.timeSeriesLayer);
       this.timeSeriesLayer = null;
     }
-    if (this.ndviLayer) {
-      this.map.removeLayer(this.ndviLayer);
-      this.ndviLayer = null;
+    if (this.yieldLayer) {
+      this.map.removeLayer(this.yieldLayer);
+      this.yieldLayer = null;
     }
     if (this.vhiLayer) {
       this.map.removeLayer(this.vhiLayer);

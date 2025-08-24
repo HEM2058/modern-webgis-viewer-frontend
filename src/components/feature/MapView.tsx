@@ -53,13 +53,13 @@ interface MapViewProps {
   // WMS props
   wmsLayerStates?: WMSLayerState;
   wmsDateArrays?: {
-    ndvi: string[];
+    yield: string[];
     vhi: string[];
     lst: string[];
   };
-  onWMSDateChange?: (date: string, layerType: 'ndvi' | 'vhi' | 'lst') => void;
-  onWMSLayerToggle?: (layerType: 'ndvi' | 'vhi' | 'lst') => void;
-  onWMSPlayToggle?: (layerType: 'ndvi' | 'vhi' | 'lst') => void;
+  onWMSDateChange?: (date: string, layerType: 'yield' | 'vhi' | 'lst') => void;
+  onWMSLayerToggle?: (layerType: 'yield' | 'vhi' | 'lst') => void;
+  onWMSPlayToggle?: (layerType: 'yield' | 'vhi' | 'lst') => void;
 }
 
 export default function MapView({
@@ -106,19 +106,16 @@ export default function MapView({
 
   // Non-WMS Layer states (heatMap and timeSeries only)
   const [layerVisibility, setLayerVisibility] = useState<LayerVisibilityState>({
-    ndvi: false,
+    yield: false,
     vhi: false, 
     lst: false,
-    heatMap: false,
-    timeSeries: false,
   });
 
   const [layerOpacity, setLayerOpacity] = useState<LayerOpacityState>({
-    ndvi: 0.8,
+    yield: 0.8,
     vhi: 0.8,
     lst: 0.8,
-    heatMap: 0.7,
-    timeSeries: 0.7,
+ 
   });
 
   // Custom hooks for state management
@@ -208,13 +205,13 @@ export default function MapView({
       // Update local visibility state for UI consistency
       setLayerVisibility(prev => ({
         ...prev,
-        ndvi: wmsLayerStates.ndvi?.visible || false,
+       yield: wmsLayerStates.yield?.visible || false,
         vhi: wmsLayerStates.vhi?.visible || false,
         lst: wmsLayerStates.lst?.visible || false,
       }));
 
       // Update actual map layers
-      const layerTypes: ('ndvi' | 'vhi' | 'lst')[] = ['ndvi', 'vhi', 'lst'];
+      const layerTypes: ('yield' | 'vhi' | 'lst')[] = ['yield', 'vhi', 'lst'];
       
       layerTypes.forEach(layerType => {
         const layerState = wmsLayerStates[layerType];
@@ -234,9 +231,9 @@ export default function MapView({
   // Handle non-WMS layer toggle
   const handleLayerToggle = (layerType: keyof LayerVisibilityState, visible: boolean) => {
     // For WMS layers, delegate to parent
-    if (['ndvi', 'vhi', 'lst'].includes(layerType)) {
+    if (['yield', 'vhi', 'lst'].includes(layerType)) {
       if (onWMSLayerToggle) {
-        onWMSLayerToggle(layerType as 'ndvi' | 'vhi' | 'lst');
+        onWMSLayerToggle(layerType as 'yield' | 'vhi' | 'lst');
       }
       return;
     }
@@ -256,16 +253,16 @@ export default function MapView({
     setLayerOpacity(prev => ({ ...prev, [layerType]: opacity }));
     
     if (layerManagerRef.current) {
-      if (['ndvi', 'vhi', 'lst'].includes(layerType)) {
-        layerManagerRef.current.setWMSLayerOpacity(layerType as 'ndvi' | 'vhi' | 'lst', opacity);
+      if (['yield', 'vhi', 'lst'].includes(layerType)) {
+        layerManagerRef.current.setWMSLayerOpacity(layerType as 'yield' | 'vhi' | 'lst', opacity);
       } else if (layerType === 'heatMap' || layerType === 'timeSeries') {
         layerManagerRef.current.adjustLayerOpacity(layerType, opacity);
       }
     }
   };
 
-  // Handle WMS date change
-  const handleWMSDateChange = (date: string, layerType: 'ndvi' | 'vhi' | 'lst') => {
+// UPDATED: Handle WMS date change - Now receives date string directly from slider
+  const handleWMSDateChange = (date: string, layerType: 'yield' | 'vhi' | 'lst') => {
     console.log(`MapView: WMS date change for ${layerType}:`, date);
     
     // Update the layer in MapLayerManager immediately
@@ -273,9 +270,18 @@ export default function MapView({
       layerManagerRef.current.updateWMSLayerTime(layerType, date);
     }
     
-    // Notify parent component
+    // Notify parent component - parent expects (layerType, date) not (date, layerType)
     if (onWMSDateChange) {
-      onWMSDateChange(date, layerType);
+      // Find the date index in the appropriate array to maintain compatibility
+      const dateArray = wmsDateArrays?.[layerType] || [];
+      const dateIndex = dateArray.indexOf(date);
+      
+      if (dateIndex !== -1) {
+        // Call parent with the expected signature: (layerType, dateIndex)
+        onWMSDateChange(layerType, dateIndex);
+      } else {
+        console.warn(`MapView: Date ${date} not found in ${layerType} date array`);
+      }
     }
   };
 
@@ -284,7 +290,7 @@ export default function MapView({
     if (!layerManagerRef.current) return {};
     
     return {
-      ndvi: layerManagerRef.current.getWMSLegendUrl('ndvi'),
+      yield: layerManagerRef.current.getWMSLegendUrl('yield'),
       vhi: layerManagerRef.current.getWMSLegendUrl('vhi'),
       lst: layerManagerRef.current.getWMSLegendUrl('lst'),
     };
@@ -293,7 +299,7 @@ export default function MapView({
   // Get current layer visibility state (combining WMS and non-WMS)
   const getCurrentLayerVisibility = (): LayerVisibilityState => {
     return {
-      ndvi: wmsLayerStates?.ndvi?.visible || false,
+      yield: wmsLayerStates?.yield?.visible || false,
       vhi: wmsLayerStates?.vhi?.visible || false,
       lst: wmsLayerStates?.lst?.visible || false,
       heatMap: layerVisibility.heatMap,
@@ -640,10 +646,10 @@ export default function MapView({
   const visParams = getVisualizationParams(timeSeriesData, indexHeatMapData);
 
   // Get currently active WMS layer for slider
-  const getActiveWMSLayer = (): { type: 'ndvi' | 'vhi' | 'lst'; name: string } | null => {
+  const getActiveWMSLayer = (): { type: 'yield' | 'vhi' | 'lst'; name: string } | null => {
     if (!wmsLayerStates) return null;
     
-    if (wmsLayerStates.ndvi?.visible) return { type: 'ndvi', name: 'NDVI' };
+    if (wmsLayerStates.yield?.visible) return { type: 'yield', name:'yield' };
     if (wmsLayerStates.vhi?.visible) return { type: 'vhi', name: 'VHI' };
     if (wmsLayerStates.lst?.visible) return { type: 'lst', name: 'LST' };
     return null;
@@ -654,7 +660,7 @@ export default function MapView({
     if (!wmsLayerStates) return 0;
     
     let count = 0;
-    if (wmsLayerStates.ndvi?.visible) count++;
+    if (wmsLayerStates.yield?.visible) count++;
     if (wmsLayerStates.vhi?.visible) count++;
     if (wmsLayerStates.lst?.visible) count++;
     return count;
@@ -665,7 +671,7 @@ export default function MapView({
     if (!wmsLayerStates) return 0;
     
     let count = 0;
-    if (wmsLayerStates.ndvi?.isPlaying) count++;
+    if (wmsLayerStates.yield?.isPlaying) count++;
     if (wmsLayerStates.vhi?.isPlaying) count++;
     if (wmsLayerStates.lst?.isPlaying) count++;
     return count;
@@ -675,7 +681,8 @@ export default function MapView({
   const visibleWMSLayersCount = getVisibleWMSLayersCount();
   const playingWMSLayersCount = getPlayingWMSLayersCount();
   const currentLayerVisibility = getCurrentLayerVisibility();
-
+console.log("active wms layer")
+console.log(activeWMSLayer)
   return (
     <div className={`relative w-full h-full bg-gray-900 overflow-hidden ${className}`}>
       {/* Map Container */}

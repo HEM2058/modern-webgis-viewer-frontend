@@ -2,11 +2,11 @@ import React, { useState, useEffect, useRef } from 'react';
 
 export interface WMSTimeSeriesSliderProps {
   dateArray: string[];
-  layerType: 'ndvi' | 'vhi' | 'lst';
+  layerType: 'yield' | 'vhi' | 'lst';
   layerName: string;
   isVisible: boolean;
-  onDateChange: (date: string, layerType: 'ndvi' | 'vhi' | 'lst') => void;
-  onPlayToggle?: (isPlaying: boolean, layerType: 'ndvi' | 'vhi' | 'lst') => void;
+  onDateChange: (date: string, layerType: 'yield' | 'vhi' | 'lst') => void;
+  onPlayToggle?: (isPlaying: boolean, layerType: 'yield' | 'vhi' | 'lst') => void;
 }
 
 export default function WMSTimeSeriesSlider({
@@ -19,9 +19,10 @@ export default function WMSTimeSeriesSlider({
 }: WMSTimeSeriesSliderProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [playbackSpeed, setPlaybackSpeed] = useState(1000); // milliseconds
+  const [playbackSpeed, setPlaybackSpeed] = useState(2000); // milliseconds
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
-
+console.log("inside slider component")
+console.log(dateArray)
   // Format date for display
   const formatDate = (dateString: string) => {
     try {
@@ -190,19 +191,21 @@ export default function WMSTimeSeriesSlider({
           </div>
 
           {/* Speed Control */}
-          <div className="flex items-center space-x-2">
-            <label className="text-xs text-gray-600">Speed:</label>
-            <select
-              value={playbackSpeed}
-              onChange={handleSpeedChange}
-              className="text-xs bg-white border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
-            >
-              <option value={2000}>0.5x</option>
-              <option value={1000}>1x</option>
-              <option value={500}>2x</option>
-              <option value={250}>4x</option>
-            </select>
-          </div>
+<div className="flex items-center space-x-2">
+  <label className="text-xs text-gray-600">Speed:</label>
+  <select
+    value={playbackSpeed}
+    onChange={handleSpeedChange}
+    className="text-xs bg-white border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+  >
+    <option value={3333}>0.3x</option>
+    <option value={2000}>0.5x</option>
+    <option value={1000}>1x</option>
+    <option value={500}>2x</option>
+    <option value={250}>4x</option>
+  </select>
+</div>
+
         </div>
 
         {/* Progress Bar */}

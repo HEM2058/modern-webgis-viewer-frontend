@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 
 export interface LayerState {
-  ndvi: boolean;
+  yield: boolean;
   vhi: boolean;
   lst: boolean;
   heatMap: boolean;
@@ -9,7 +9,7 @@ export interface LayerState {
 }
 
 export interface LayerOpacity {
-  ndvi: number;
+  yield: number;
   vhi: number;
   lst: number;
   heatMap: number;
@@ -23,7 +23,7 @@ export interface LayerTogglePanelProps {
   onOpacityChange: (layerType: keyof LayerState, opacity: number) => void;
   onLayerClick?: (layerType: keyof LayerState) => void; // New prop for zoom functionality
   legendUrls?: {
-    ndvi?: string;
+    yield?: string;
     vhi?: string;
     lst?: string;
   };
@@ -41,8 +41,8 @@ interface LayerConfig {
 
 const layerConfigs: LayerConfig[] = [
   {
-    key: 'ndvi',
-    label: 'NDVI',
+    key: 'yield',
+    label: 'Projected Yield',
     color: 'text-green-600',
     icon: 'ri-leaf-line',
     description: 'Projected Yield (Tons per Hectare)',

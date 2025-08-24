@@ -9,10 +9,11 @@ import logo from "../../assets/logo.png";
 
 // Sample WMS date arrays - Replace with actual API data
 const wmsDateArrays: WMSLayerData = {
-  ndvi: [
-    '2024-01-01', '2024-02-01', '2024-03-01', '2024-04-01', 
-    '2024-05-01', '2024-06-01', '2024-07-01', '2024-08-01', 
-    '2024-09-01', '2024-10-01', '2024-11-01', '2024-12-01'
+  yield: [
+    '2024-01-01', '2024-02-01', '2024-03-01', '2024-04-01',
+    '2024-05-01', '2024-06-01', '2024-07-01',
+    // August to December 2024 excluded
+    '2025-01-01', '2025-02-01', '2025-03-01',
   ],
   vhi: [
     '2024-01-01', '2024-02-01', '2024-03-01', '2024-04-01', 
@@ -275,16 +276,53 @@ export default function Home() {
     setChangeDetectionData(null);
   };
 
-  // WMS Layer control handlers
-  const handleWMSLayerToggle = (layerType: 'ndvi' | 'vhi' | 'lst') => {
-    toggleWMSLayerVisibility(layerType);
+  // UPDATED: WMS Layer control handlers - Now ensures only one layer is visible at a time
+  const handleWMSLayerToggle = (layerType: 'yield' | 'vhi' | 'lst') => {
+    console.log(`Home: Toggling WMS layer: ${layerType}`);
+    
+    // Get current visibility state
+    const currentLayerState = wmsLayerStates[layerType];
+    const isCurrentlyVisible = currentLayerState?.visible || false;
+    
+    if (isCurrentlyVisible) {
+      // If clicking on the currently visible layer, hide it
+      console.log(`Home: Hiding currently visible layer: ${layerType}`);
+      toggleWMSLayerVisibility(layerType);
+    } else {
+      // If clicking on a hidden layer, show it (this will automatically hide others)
+      console.log(`Home: Showing layer ${layerType}, others will be hidden automatically`);
+      
+      // First hide all other layers explicitly
+      const otherLayers: ('yield' | 'vhi' | 'lst')[] = ['yield', 'vhi', 'lst'].filter(l => l !== layerType);
+      otherLayers.forEach(otherLayerType => {
+        const otherLayerState = wmsLayerStates[otherLayerType];
+        if (otherLayerState?.visible) {
+          console.log(`Home: Hiding ${otherLayerType} to show ${layerType}`);
+          toggleWMSLayerVisibility(otherLayerType);
+        }
+      });
+      
+      // Then show the target layer
+      toggleWMSLayerVisibility(layerType);
+    }
   };
 
-  const handleWMSDateChange = (layerType: 'ndvi' | 'vhi' | 'lst', dateIndex: number) => {
-    setLayerDateByIndex(layerType, dateIndex);
+  // UPDATED: Handle WMS date change - Now receives date string and converts to index
+  const handleWMSDateChange = (date: string, layerType: 'yield' | 'vhi' | 'lst') => {
+    console.log(`Home: WMS date change for ${layerType}:`, date);
+    
+    // Find the index of this date in our date arrays
+    const dateArray = wmsDateArrays[layerType] || [];
+    const dateIndex = dateArray.indexOf(date);
+    
+    if (dateIndex !== -1) {
+      setLayerDateByIndex(layerType, dateIndex);
+    } else {
+      console.warn(`Home: Date ${date} not found in ${layerType} date array`);
+    }
   };
 
-  const handleWMSPlayToggle = (layerType: 'ndvi' | 'vhi' | 'lst') => {
+  const handleWMSPlayToggle = (layerType: 'yield' | 'vhi' | 'lst') => {
     toggleLayerPlayback(layerType);
   };
 
@@ -357,9 +395,9 @@ export default function Home() {
           break;
           
         // Add WMS-specific analysis types
-        case 'wms_ndvi':
-          handleWMSLayerToggle('ndvi');
-          setAnalysisResults({ type: 'wms_ndvi', ...params });
+        case 'wms_yield':
+          handleWMSLayerToggle('yield');
+          setAnalysisResults({ type: 'wms_yield', ...params });
           break;
           
         case 'wms_vhi':
@@ -393,8 +431,8 @@ export default function Home() {
         return `Generating ${params.index} Time Series...`;
       case 'report':
         return 'Generating Report...';
-      case 'wms_ndvi':
-        return 'Loading NDVI Layer...';
+      case 'wms_yield':
+        return 'Loading Yield Layer...';
       case 'wms_vhi':
         return 'Loading VHI Layer...';
       case 'wms_lst':
@@ -598,6 +636,24 @@ export default function Home() {
             </div>
           )}
 
+          {/* UPDATED: Single Active WMS Layer Indicator */}
+          {(() => {
+            const activeLayer = Object.entries(wmsLayerStates).find(([_, state]) => state?.visible);
+            return activeLayer && !isChangeDetectionMode ? (
+              <div className="absolute top-4 left-4 z-15 bg-green-100 border border-green-300 rounded-lg p-2">
+                <div className="flex items-center space-x-2">
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                  <span className="text-xs text-green-700 font-medium">
+                    {activeLayer[0].toUpperCase()} Layer Active (Zoom: 9)
+                  </span>
+                  {activeLayer[1]?.isPlaying && (
+                    <i className="ri-play-fill text-green-600 text-sm"></i>
+                  )}
+                </div>
+              </div>
+            ) : null;
+          })()}
+
           {/* Change Detection Status Indicator */}
           {isChangeDetectionMode && changeDetectionData && (
             <div className="absolute top-4 right-4 z-30 bg-gradient-to-r from-blue-100 to-orange-100 border border-gray-300 rounded-lg p-3">
@@ -614,7 +670,7 @@ export default function Home() {
                 {new Date(changeDetectionData.after.date).toLocaleDateString()}
               </div>
               <div className="text-xs text-gray-500 mt-1">
-                ΔNDVI: {(changeDetectionData.after.mean_index_value - changeDetectionData.before.mean_index_value).toFixed(3)}
+                Δyield: {(changeDetectionData.after.mean_index_value - changeDetectionData.before.mean_index_value).toFixed(3)}
               </div>
             </div>
           )}
