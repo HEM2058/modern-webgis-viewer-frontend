@@ -1,258 +1,358 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import type { LayerVisibilityState, LayerOpacityState } from './MapUtils/MapLayerManager';
 
-export interface LayerState {
-  yield: boolean;
-  vhi: boolean;
-  lst: boolean;
-  heatMap: boolean;
-  timeSeries: boolean;
+interface LayerTogglePanelProps {
+  layerVisibility: LayerVisibilityState;
+  layerOpacity: LayerOpacityState;
+  onLayerToggle: (layerType: keyof LayerVisibilityState, visible: boolean) => void;
+  onOpacityChange: (layerType: keyof LayerOpacityState, opacity: number) => void;
+  legendUrls?: Record<string, string>;
+  onCropAreaLayerToggle?: (cropType: 'maize' | 'sugarCane' | 'rice', visible: boolean) => void;
 }
-
-export interface LayerOpacity {
-  yield: number;
-  vhi: number;
-  lst: number;
-  heatMap: number;
-  timeSeries: number;
-}
-
-export interface LayerTogglePanelProps {
-  layerVisibility: LayerState;
-  layerOpacity: LayerOpacity;
-  onLayerToggle: (layerType: keyof LayerState, visible: boolean) => void;
-  onOpacityChange: (layerType: keyof LayerState, opacity: number) => void;
-  onLayerClick?: (layerType: keyof LayerState) => void; // New prop for zoom functionality
-  legendUrls?: {
-    yield?: string;
-    vhi?: string;
-    lst?: string;
-  };
-  className?: string;
-}
-
-interface LayerConfig {
-  key: keyof LayerState;
-  label: string;
-  color: string;
-  icon: string;
-  description: string;
-  hasZoom: boolean; // Add flag to indicate which layers support zoom
-}
-
-const layerConfigs: LayerConfig[] = [
-  {
-    key: 'yield',
-    label: 'Projected Yield',
-    color: 'text-green-600',
-    icon: 'ri-leaf-line',
-    description: 'Projected Yield (Tons per Hectare)',
-    hasZoom: true
-  },
-  {
-    key: 'vhi',
-    label: 'VHI',
-    color: 'text-blue-600',
-    icon: 'ri-heart-pulse-line',
-    description: 'Vegetation Health Index',
-    hasZoom: true
-  },
-  {
-    key: 'lst',
-    label: 'LST',
-    color: 'text-red-600',
-    icon: 'ri-temp-hot-line',
-    description: 'Land Surface Temperature',
-    hasZoom: true
-  }
-];
 
 export default function LayerTogglePanel({
   layerVisibility,
   layerOpacity,
   onLayerToggle,
   onOpacityChange,
-  onLayerClick,
   legendUrls = {},
-  className = ''
+  onCropAreaLayerToggle
 }: LayerTogglePanelProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [showLegends, setShowLegends] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<'timeSeries' | 'cropArea'>('timeSeries');
+  const panelRef = useRef<HTMLDivElement>(null);
 
-  // Count visible layers
-  const visibleLayersCount = Object.values(layerVisibility).filter(Boolean).length;
+  // Close panel when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
 
-  // Handle layer toggle
-  const handleLayerToggle = (layerKey: keyof LayerState) => {
-    const newVisibility = !layerVisibility[layerKey];
-    onLayerToggle(layerKey, newVisibility);
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isOpen]);
+
+  const layerConfigs = {
+    timeSeries: [
+      {
+        key: 'yield' as const,
+        label: 'Yield',
+        icon: 'ri-plant-line',
+        color: 'text-green-500',
+        description: 'Crop yield predictions',
+        hasLegend: true
+      },
+      {
+        key: 'vhi' as const,
+        label: 'VHI',
+        icon: 'ri-leaf-line',
+        color: 'text-emerald-500',
+        description: 'Vegetation Health Index',
+        hasLegend: true
+      },
+      {
+        key: 'lst' as const,
+        label: 'LST',
+        icon: 'ri-temp-hot-line',
+        color: 'text-orange-500',
+        description: 'Land Surface Temperature',
+        hasLegend: true
+      }
+    ],
+    cropArea: [
+      {
+        key: 'maize' as const,
+        label: 'Maize Area Map',
+        icon: 'ri-seedling-line',
+        color: 'text-yellow-600',
+        description: 'Philippines Maize cultivation areas'
+      },
+      {
+        key: 'sugarCane' as const,
+        label: 'Sugarcane Area Map', 
+        icon: 'ri-plant-line',
+        color: 'text-green-600',
+        description: 'Philippines Sugarcane cultivation areas'
+      },
+      {
+        key: 'rice' as const,
+        label: 'Rice Area Map',
+        icon: 'ri-seedling-fill',
+        color: 'text-green-700',
+        description: 'Philippines Rice cultivation areas'
+      }
+    ]
   };
 
-  // Handle opacity change
-  const handleOpacityChange = (layerKey: keyof LayerState, value: number) => {
-    onOpacityChange(layerKey, value / 100);
+  // Get currently selected layer for Time Series (only one can be selected)
+  const getSelectedTimeSeriesLayer = (): string | null => {
+    for (const config of layerConfigs.timeSeries) {
+      if (layerVisibility[config.key]) {
+        return config.key;
+      }
+    }
+    return null;
   };
 
-  // Handle layer click for zoom functionality
-  const handleLayerClick = (layerKey: keyof LayerState) => {
-    if (onLayerClick) {
-      onLayerClick(layerKey);
+  const handleTimeSeriesLayerToggle = (layerKey: keyof LayerVisibilityState) => {
+    const currentSelected = getSelectedTimeSeriesLayer();
+    
+    // If clicking the currently selected layer, deselect it
+    if (currentSelected === layerKey) {
+      onLayerToggle(layerKey, false);
+    } else {
+      // First turn off the currently selected layer if any
+      if (currentSelected) {
+        onLayerToggle(currentSelected as keyof LayerVisibilityState, false);
+      }
+      // Then turn on the new layer
+      onLayerToggle(layerKey, true);
     }
   };
 
+  const handleCropAreaLayerToggle = (layerKey: keyof LayerVisibilityState) => {
+    const isVisible = layerVisibility[layerKey];
+    
+    // For crop area layers, use the special handler if available
+    if (['maize', 'sugarCane', 'rice'].includes(layerKey) && onCropAreaLayerToggle) {
+      onCropAreaLayerToggle(layerKey as 'maize' | 'sugarCane' | 'rice', !isVisible);
+    } else {
+      onLayerToggle(layerKey, !isVisible);
+    }
+  };
+
+  const getVisibleLayersCount = (tab: 'timeSeries' | 'cropArea') => {
+    const configs = layerConfigs[tab];
+    return configs.filter(config => layerVisibility[config.key]).length;
+  };
+
+  const renderTimeSeriesLayerItem = (config: typeof layerConfigs.timeSeries[0]) => {
+    const isSelected = layerVisibility[config.key];
+    const opacity = layerOpacity[config.key];
+
+    return (
+      <div key={config.key} className={`bg-white rounded-lg p-4 border-2 transition-all duration-200 cursor-pointer ${
+        isSelected ? 'border-emerald-500 bg-emerald-50' : 'border-gray-200 hover:border-gray-300'
+      }`}
+      onClick={() => handleTimeSeriesLayerToggle(config.key)}
+      >
+        {/* Layer Header */}
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-2">
+              {/* Radio button style indicator */}
+              <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                isSelected ? 'border-emerald-500' : 'border-gray-300'
+              }`}>
+                {isSelected && (
+                  <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>
+                )}
+              </div>
+              <i className={`${config.icon} ${config.color} text-lg`}></i>
+              <span className={`font-medium ${isSelected ? 'text-emerald-900' : 'text-gray-900'}`}>
+                {config.label}
+              </span>
+            </div>
+          </div>
+          
+          {/* Selection indicator */}
+          <div className={`w-2 h-2 rounded-full ${isSelected ? 'bg-emerald-500' : 'bg-gray-300'}`}></div>
+        </div>
+
+        {/* Layer Description */}
+        <p className={`text-xs mb-3 ${isSelected ? 'text-emerald-700' : 'text-gray-600'}`}>
+          {config.description}
+        </p>
+
+        {/* Opacity Slider */}
+        {isSelected && (
+          <div className="space-y-2" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-emerald-600">Opacity</span>
+              <span className="text-xs font-medium text-emerald-700">{Math.round(opacity * 100)}%</span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.1"
+              value={opacity}
+              onChange={(e) => onOpacityChange(config.key, parseFloat(e.target.value))}
+              className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer opacity-slider"
+            />
+          </div>
+        )}
+
+        {/* Legend for Time Series layers */}
+        {config.hasLegend && isSelected && legendUrls[config.key] && (
+          <div className="mt-3 pt-3 border-t border-emerald-200" onClick={(e) => e.stopPropagation()}>
+            <div className="text-xs text-emerald-600 mb-2">Legend</div>
+            <img
+              src={legendUrls[config.key]}
+              alt={`${config.label} Legend`}
+              className="max-w-full h-auto rounded border"
+              onError={(e) => {
+                const target = e.target as HTMLImageElement;
+                target.style.display = 'none';
+              }}
+            />
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderCropAreaLayerItem = (config: typeof layerConfigs.cropArea[0]) => {
+    const isVisible = layerVisibility[config.key];
+    const opacity = layerOpacity[config.key];
+
+    return (
+      <div key={config.key} className="bg-white rounded-lg p-4 border border-gray-200 hover:border-gray-300 transition-colors">
+        {/* Layer Header */}
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center space-x-3">
+            <label className="flex items-center space-x-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isVisible}
+                onChange={() => handleCropAreaLayerToggle(config.key)}
+                className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+              />
+              <i className={`${config.icon} ${config.color} text-lg`}></i>
+              <span className="font-medium text-gray-900">{config.label}</span>
+            </label>
+          </div>
+          
+          {/* Visibility indicator */}
+          <div className={`w-2 h-2 rounded-full ${isVisible ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+        </div>
+
+        {/* Layer Description */}
+        <p className="text-xs text-gray-600 mb-3">{config.description}</p>
+
+        {/* Opacity Slider */}
+        {isVisible && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-gray-500">Opacity</span>
+              <span className="text-xs font-medium text-gray-700">{Math.round(opacity * 100)}%</span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.1"
+              value={opacity}
+              onChange={(e) => onOpacityChange(config.key, parseFloat(e.target.value))}
+              className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer opacity-slider"
+            />
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const tabNames = {
+    timeSeries: 'Time Series',
+    cropArea: 'Crop Areas'
+  };
+
   return (
-    <div className={`absolute top-4 right-4 z-20 ${className}`}>
-      {/* Main Toggle Button */}
+    <div ref={panelRef} className="absolute top-4 right-4 z-20">
+      {/* Toggle Button */}
       <button
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="bg-white hover:bg-gray-50 rounded-lg shadow-lg p-3 transition-all duration-200 border border-gray-200"
-        title="Toggle Layers"
+        onClick={() => setIsOpen(!isOpen)}
+        className={`bg-white rounded-lg shadow-lg p-3 hover:shadow-xl transition-all duration-300 border-2 ${
+          isOpen ? 'border-emerald-500' : 'border-gray-200'
+        }`}
+        title="Layer Controls"
       >
         <div className="flex items-center space-x-2">
-          <i className="ri-stack-line text-xl text-gray-700"></i>
-          <span className="text-sm font-medium text-gray-700">Layers</span>
-          {visibleLayersCount > 0 && (
-            <span className="bg-green-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-              {visibleLayersCount}
-            </span>
+          <i className={`ri-stack-line text-xl ${isOpen ? 'text-emerald-600' : 'text-gray-600'}`}></i>
+          {/* Active layers indicator */}
+          {(getVisibleLayersCount('timeSeries') + getVisibleLayersCount('cropArea')) > 0 && (
+            <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
           )}
-          <i className={`ri-arrow-${isExpanded ? 'up' : 'down'}-s-line text-sm text-gray-500`}></i>
         </div>
       </button>
 
-      {/* Expanded Panel */}
-      {isExpanded && (
-        <div className="mt-2 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden">
-          {/* Panel Header */}
-          <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
+      {/* Panel */}
+      {isOpen && (
+        <div className="absolute top-16 right-0 w-80 max-h-96 bg-white rounded-lg shadow-2xl border border-gray-200 overflow-hidden">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-emerald-50 to-blue-50 p-4 border-b border-gray-200">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-gray-900">Map Layers</h3>
               <div className="flex items-center space-x-2">
-                <button
-                  onClick={() => setShowLegends(!showLegends)}
-                  className="text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 px-2 py-1 rounded transition-colors"
-                  title="Toggle Legends"
-                >
-                  <i className="ri-image-line mr-1"></i>
-                  Legends
-                </button>
-                <button
-                  onClick={() => setIsExpanded(false)}
-                  className="text-gray-500 hover:text-gray-700 transition-colors"
-                >
-                  <i className="ri-close-line text-sm"></i>
-                </button>
+                <i className="ri-stack-line text-emerald-600 text-lg"></i>
+                <h3 className="font-semibold text-gray-900">Layer Controls</h3>
               </div>
+              <button
+                onClick={() => setIsOpen(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <i className="ri-close-line text-lg"></i>
+              </button>
+            </div>
+
+            {/* Tab Navigation */}
+            <div className="flex mt-3 bg-white rounded-lg p-1">
+              {(Object.keys(tabNames) as Array<keyof typeof tabNames>).map((tab) => {
+                const visibleCount = getVisibleLayersCount(tab);
+                return (
+                  <button
+                    key={tab}
+                    onClick={() => setActiveTab(tab)}
+                    className={`flex-1 py-2 px-3 text-xs font-medium rounded-md transition-colors ${
+                      activeTab === tab
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    {tabNames[tab]}
+                    {visibleCount > 0 && (
+                      <span className="ml-1 inline-flex items-center justify-center w-4 h-4 text-xs bg-emerald-500 text-white rounded-full">
+                        {visibleCount}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
-          {/* Layer Controls */}
-          <div className="p-4 space-y-4 max-h-96 overflow-y-auto">
-            {layerConfigs.map((config) => (
-              <div key={config.key} className="space-y-2">
-                {/* Layer Toggle */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3 flex-1">
-                    <button
-                      onClick={() => handleLayerToggle(config.key)}
-                      className={`flex items-center justify-center w-8 h-8 rounded-full transition-all duration-200 ${
-                        layerVisibility[config.key]
-                          ? 'bg-green-100 text-green-600 ring-2 ring-green-500 ring-opacity-30'
-                          : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
-                      }`}
-                    >
-                      <i className={config.icon}></i>
-                    </button>
-                    <div 
-                      className="flex-1 cursor-pointer"
-                      onClick={() => handleLayerClick(config.key)}
-                    >
-                      <div className={`text-sm font-medium ${layerVisibility[config.key] ? config.color : 'text-gray-500'} hover:opacity-80 transition-opacity`}>
-                        {config.label}
-                        {config.hasZoom && (
-                          <i className="ri-map-pin-line ml-1 text-xs opacity-60" title="Click to zoom to Philippines"></i>
-                        )}
-                      </div>
-                      <div className="text-xs text-gray-500">{config.description}</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <span className="text-xs text-gray-500">
-                      {Math.round(layerOpacity[config.key] * 100)}%
-                    </span>
-                    {/* Zoom button */}
-                    {config.hasZoom && (
-                      <button
-                        onClick={() => handleLayerClick(config.key)}
-                        className="text-gray-400 hover:text-blue-600 transition-colors p-1"
-                        title="Zoom to Philippines"
-                      >
-                        <i className="ri-zoom-in-line text-sm"></i>
-                      </button>
-                    )}
-                  </div>
-                </div>
+          {/* Content */}
+          <div className="p-4 max-h-64 overflow-y-auto">
+            <div className="space-y-3">
+              {activeTab === 'timeSeries' && layerConfigs.timeSeries.map(renderTimeSeriesLayerItem)}
+              {activeTab === 'cropArea' && layerConfigs.cropArea.map(renderCropAreaLayerItem)}
+            </div>
 
-                {/* Opacity Slider - Only show if layer is visible */}
-                {layerVisibility[config.key] && (
-                  <div className="ml-11 space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-gray-500">Opacity</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
-                      value={layerOpacity[config.key] * 100}
-                      onChange={(e) => handleOpacityChange(config.key, parseInt(e.target.value))}
-                      className="w-full h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer opacity-slider"
-                      style={{
-                        background: `linear-gradient(to right, ${config.color.replace('text-', 'rgb(from theme(colors.')} 0%, ${config.color.replace('text-', 'rgb(from theme(colors.')} ${layerOpacity[config.key] * 100}%, #e5e7eb ${layerOpacity[config.key] * 100}%, #e5e7eb 100%)`
-                      }}
-                    />
-                  </div>
-                )}
-
-                {/* Legend - Only show for WMS layers if legends are enabled */}
-                {showLegends && layerVisibility[config.key] && legendUrls[config.key as keyof typeof legendUrls] && (
-                  <div className="ml-11 mt-2">
-                    <div className="text-xs text-gray-500 mb-1">Legend:</div>
-                    <img
-                      src={legendUrls[config.key as keyof typeof legendUrls]}
-                      alt={`${config.label} Legend`}
-                      className="border border-gray-200 rounded"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).style.display = 'none';
-                      }}
-                    />
-                  </div>
-                )}
-
-                {/* Divider */}
-                {layerConfigs.indexOf(config) < layerConfigs.length - 1 && (
-                  <div className="border-b border-gray-100"></div>
-                )}
+            {/* Empty state */}
+            {layerConfigs[activeTab].length === 0 && (
+              <div className="text-center py-8 text-gray-500">
+                <i className="ri-landscape-line text-3xl mb-2"></i>
+                <p className="text-sm">No layers available in this category</p>
               </div>
-            ))}
+            )}
           </div>
 
-          {/* Panel Footer */}
-          <div className="px-4 py-3 bg-gray-50 border-t border-gray-200">
-            <div className="flex items-center justify-between text-xs text-gray-500">
-              <span>{visibleLayersCount} layer{visibleLayersCount !== 1 ? 's' : ''} active</span>
-              <button
-                onClick={() => {
-                  // Turn off all layers
-                  Object.keys(layerVisibility).forEach((key) => {
-                    if (layerVisibility[key as keyof LayerState]) {
-                      onLayerToggle(key as keyof LayerState, false);
-                    }
-                  });
-                }}
-                className="text-red-600 hover:text-red-700 transition-colors"
-                disabled={visibleLayersCount === 0}
-              >
-                Clear All
-              </button>
+          {/* Footer with layer summary */}
+          <div className="bg-gray-50 p-3 border-t border-gray-200">
+            <div className="flex items-center justify-between text-xs text-gray-600">
+              <span>
+                Total Active: {getVisibleLayersCount('timeSeries') + getVisibleLayersCount('cropArea')} layers
+              </span>
+              <div className="flex items-center space-x-1">
+                <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>
+                <span>Live</span>
+              </div>
             </div>
           </div>
         </div>
@@ -264,21 +364,20 @@ export default function LayerTogglePanel({
           height: 16px;
           width: 16px;
           border-radius: 50%;
-          background: #374151;
-          border: 2px solid white;
-          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+          background: #10b981;
           cursor: pointer;
+          border: 2px solid white;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.2);
         }
 
         .opacity-slider::-moz-range-thumb {
           height: 16px;
           width: 16px;
           border-radius: 50%;
-          background: #374151;
-          border: 2px solid white;
-          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+          background: #10b981;
           cursor: pointer;
-          border: none;
+          border: 2px solid white;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.2);
         }
       `}</style>
     </div>

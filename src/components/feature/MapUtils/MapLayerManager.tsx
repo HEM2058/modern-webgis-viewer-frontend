@@ -18,6 +18,10 @@ export interface LayerVisibilityState {
   lst: boolean;
   heatMap: boolean;
   timeSeries: boolean;
+  // New crop area layers
+  maize: boolean;
+  sugarCane: boolean;
+  rice: boolean;
 }
 
 export interface LayerOpacityState {
@@ -26,6 +30,16 @@ export interface LayerOpacityState {
   lst: number;
   heatMap: number;
   timeSeries: number;
+  // New crop area layers
+  maize: number;
+  sugarCane: number;
+  rice: number;
+}
+
+export interface CropAreaLayerData {
+  success: boolean;
+  tile_url: string;
+  [key: string]: any;
 }
 
 export class MapLayerManager {
@@ -38,6 +52,22 @@ export class MapLayerManager {
   private yieldLayer: ImageLayer<ImageWMS> | null = null;
   private vhiLayer: ImageLayer<ImageWMS> | null = null;
   private lstLayer: ImageLayer<ImageWMS> | null = null;
+
+  // New crop area layers
+  private maizeLayer: TileLayer | null = null;
+  private sugarCaneLayer: TileLayer | null = null;
+  private riceLayer: TileLayer | null = null;
+
+  // Crop area layer data storage
+  private cropAreaLayerData: {
+    maize: CropAreaLayerData | null;
+    sugarCane: CropAreaLayerData | null;
+    rice: CropAreaLayerData | null;
+  } = {
+    maize: null,
+    sugarCane: null,
+    rice: null
+  };
 
   // Layer configurations
   private readonly wmsConfigs = {
@@ -62,6 +92,13 @@ export class MapLayerManager {
       defaultTime: '2023-01-01',
       visible: false
     }
+  };
+
+  // Crop area layer API endpoints
+  private readonly cropAreaAPIs = {
+    maize: 'https://backend.digisaka.com/api/imagesworldcereal/',
+    sugarCane: 'https://backend.digisaka.com/api/imagesworldsugarcane/',
+    rice: 'https://backend.digisaka.com/api/imagesworldrice/'
   };
 
   constructor(map: Map) {
@@ -110,13 +147,10 @@ export class MapLayerManager {
           'VERSION': '1.1.1',
           'SRS': 'EPSG:3857',
           'TILED': true,
-          'CQL_FILTER': undefined // Remove any default filters
+          'CQL_FILTER': undefined
         },
         serverType: 'geoserver',
         crossOrigin: 'anonymous',
-        // Disable caching to ensure fresh requests
-        imageLoadFunction: undefined,
-        // Add random parameter to prevent caching issues
         imageLoadFunction: (image, src) => {
           const imgElement = image.getImage() as HTMLImageElement;
           const separator = src.includes('?') ? '&' : '?';
@@ -180,6 +214,158 @@ export class MapLayerManager {
     this.map.addLayer(this.lstLayer);
 
     console.log('MapLayerManager: WMS layers initialized and added to map');
+  }
+
+  // NEW: Fetch crop area layer data
+  async fetchCropAreaLayerData(cropType: 'maize' | 'sugarCane' | 'rice'): Promise<CropAreaLayerData | null> {
+    try {
+      console.log(`MapLayerManager: Fetching ${cropType} layer data...`);
+      
+      const response = await fetch(this.cropAreaAPIs[cropType]);
+      const data = await response.json();
+
+      if (data.success) {
+        console.log(`MapLayerManager: Successfully fetched ${cropType} layer data:`, data);
+        this.cropAreaLayerData[cropType] = data;
+        return data;
+      } else {
+        console.error(`MapLayerManager: Failed to fetch ${cropType} layer data:`, data);
+        return null;
+      }
+    } catch (error) {
+      console.error(`MapLayerManager: Error fetching ${cropType} layer:`, error);
+      return null;
+    }
+  }
+
+  // NEW: Create crop area tile layer
+  private createCropAreaTileLayer(tileUrl: string, cropType: string, opacity: number = 0.8): TileLayer {
+    return new TileLayer({
+      source: new XYZ({
+        url: tileUrl,
+        crossOrigin: 'anonymous',
+      }),
+      opacity: opacity,
+      zIndex: 200, // Higher than WMS layers but lower than vector layers
+    });
+  }
+
+  // NEW: Toggle crop area layers
+  async toggleCropAreaLayer(cropType: 'maize' | 'sugarCane' | 'rice', visible: boolean, onLoadingStart?: () => string, onLoadingEnd?: (toastId: string, success: boolean, message: string) => void): Promise<void> {
+    console.log(`MapLayerManager: Toggling ${cropType} layer to ${visible ? 'visible' : 'hidden'}`);
+
+    const currentLayer = this.getCropAreaLayer(cropType);
+
+    if (visible) {
+      // If we don't have the data yet, fetch it
+      if (!this.cropAreaLayerData[cropType]) {
+        // Show loading indicator if callback provided
+        const toastId = onLoadingStart ? onLoadingStart() : '';
+        
+        const data = await this.fetchCropAreaLayerData(cropType);
+        
+        if (data && data.tile_url) {
+          // Create and add new layer
+          const newLayer = this.createCropAreaTileLayer(data.tile_url, cropType);
+          this.setCropAreaLayer(cropType, newLayer);
+          this.map.addLayer(newLayer);
+
+          // Success callback
+          if (onLoadingEnd) {
+            const cropNames = {
+              maize: 'Maize',
+              sugarCane: 'SugarCane', 
+              rice: 'Rice'
+            };
+            onLoadingEnd(toastId, true, `Loaded ${cropNames[cropType]} Area Layer Successfully!`);
+          }
+        } else {
+          // Error callback
+          if (onLoadingEnd) {
+            onLoadingEnd(toastId, false, 'Failed to fetch valid data. Please try again.');
+          }
+          return;
+        }
+      } else {
+        // Data exists, create layer if it doesn't exist
+        if (!currentLayer && this.cropAreaLayerData[cropType]?.tile_url) {
+          const newLayer = this.createCropAreaTileLayer(this.cropAreaLayerData[cropType]!.tile_url, cropType);
+          this.setCropAreaLayer(cropType, newLayer);
+          this.map.addLayer(newLayer);
+        } else if (currentLayer) {
+          // Layer exists, just make it visible
+          currentLayer.setVisible(true);
+        }
+      }
+    } else {
+      // Hide the layer
+      if (currentLayer) {
+        currentLayer.setVisible(false);
+      }
+    }
+
+    this.map.render();
+  }
+
+  // NEW: Get crop area layer by type
+  private getCropAreaLayer(cropType: 'maize' | 'sugarCane' | 'rice'): TileLayer | null {
+    switch (cropType) {
+      case 'maize':
+        return this.maizeLayer;
+      case 'sugarCane':
+        return this.sugarCaneLayer;
+      case 'rice':
+        return this.riceLayer;
+      default:
+        return null;
+    }
+  }
+
+  // NEW: Set crop area layer by type
+  private setCropAreaLayer(cropType: 'maize' | 'sugarCane' | 'rice', layer: TileLayer): void {
+    switch (cropType) {
+      case 'maize':
+        this.maizeLayer = layer;
+        break;
+      case 'sugarCane':
+        this.sugarCaneLayer = layer;
+        break;
+      case 'rice':
+        this.riceLayer = layer;
+        break;
+    }
+  }
+
+  // NEW: Set crop area layer opacity
+  setCropAreaLayerOpacity(cropType: 'maize' | 'sugarCane' | 'rice', opacity: number): void {
+    console.log(`MapLayerManager: Setting ${cropType} layer opacity to: ${opacity}`);
+    
+    const layer = this.getCropAreaLayer(cropType);
+    if (layer) {
+      layer.setOpacity(opacity);
+      this.map.render();
+    }
+  }
+
+  // NEW: Check if crop area layer is visible
+  isCropAreaLayerVisible(cropType: 'maize' | 'sugarCane' | 'rice'): boolean {
+    const layer = this.getCropAreaLayer(cropType);
+    return layer?.getVisible() ?? false;
+  }
+
+  // NEW: Hide all crop area layers
+  hideAllCropAreaLayers(): void {
+    console.log('MapLayerManager: Hiding all crop area layers');
+    
+    (['maize', 'sugarCane', 'rice'] as const).forEach(cropType => {
+      const layer = this.getCropAreaLayer(cropType);
+      if (layer && layer.getVisible()) {
+        layer.setVisible(false);
+        console.log(`MapLayerManager: Hidden ${cropType} layer`);
+      }
+    });
+    
+    this.map.render();
   }
 
   // Initialize vector layer for GeoJSON
@@ -248,7 +434,7 @@ export class MapLayerManager {
     }
   }
 
-  // UPDATED: Toggle WMS layer visibility - Only one layer active at a time with zoom level 9
+  // Toggle WMS layer visibility - Only one layer active at a time with zoom level 9
   toggleWMSLayer(layerType: 'yield' | 'vhi' | 'lst', visible: boolean) {
     console.log(`MapLayerManager: Toggling ${layerType} layer to ${visible ? 'visible' : 'hidden'}`);
     
@@ -398,7 +584,7 @@ export class MapLayerManager {
     return `${config.url}?REQUEST=GetLegendGraphic&FORMAT=image/png&WIDTH=20&HEIGHT=20&LAYER=${config.layers}&STYLE=${config.styles}`;
   }
 
-  // UPDATED: Check if any WMS layer is visible (now only one can be visible at a time)
+  // Check if any WMS layer is visible (now only one can be visible at a time)
   isAnyWMSLayerVisible(): boolean {
     return (
       (this.yieldLayer?.getVisible() ?? false) ||
@@ -407,7 +593,7 @@ export class MapLayerManager {
     );
   }
 
-  // UPDATED: Get the currently active WMS layer (since only one can be active)
+  // Get the currently active WMS layer (since only one can be active)
   getActiveWMSLayer(): 'yield' | 'vhi' | 'lst' | null {
     if (this.yieldLayer?.getVisible()) return 'yield';
     if (this.vhiLayer?.getVisible()) return 'vhi';
@@ -415,7 +601,7 @@ export class MapLayerManager {
     return null;
   }
 
-  // Get current layer visibility state
+  // UPDATED: Get current layer visibility state (includes crop area layers)
   getLayerVisibility(): LayerVisibilityState {
     return {
       yield: this.yieldLayer?.getVisible() ?? false,
@@ -423,10 +609,14 @@ export class MapLayerManager {
       lst: this.lstLayer?.getVisible() ?? false,
       heatMap: (this.heatMapLayer?.getOpacity() ?? 0) > 0,
       timeSeries: (this.timeSeriesLayer?.getOpacity() ?? 0) > 0,
+      // New crop area layers
+      maize: this.maizeLayer?.getVisible() ?? false,
+      sugarCane: this.sugarCaneLayer?.getVisible() ?? false,
+      rice: this.riceLayer?.getVisible() ?? false,
     };
   }
 
-  // Get current layer opacity state
+  // UPDATED: Get current layer opacity state (includes crop area layers)
   getLayerOpacity(): LayerOpacityState {
     return {
       yield: this.yieldLayer?.getOpacity() ?? 0.8,
@@ -434,10 +624,14 @@ export class MapLayerManager {
       lst: this.lstLayer?.getOpacity() ?? 0.8,
       heatMap: this.heatMapLayer?.getOpacity() ?? 0.7,
       timeSeries: this.timeSeriesLayer?.getOpacity() ?? 0.7,
+      // New crop area layers
+      maize: this.maizeLayer?.getOpacity() ?? 0.8,
+      sugarCane: this.sugarCaneLayer?.getOpacity() ?? 0.8,
+      rice: this.riceLayer?.getOpacity() ?? 0.8,
     };
   }
 
-  // UPDATED: Hide all WMS layers
+  // Hide all WMS layers
   hideAllWMSLayers() {
     console.log('MapLayerManager: Hiding all WMS layers');
     
@@ -593,8 +787,9 @@ export class MapLayerManager {
     return this.timeSeriesLayer;
   }
 
-  // Cleanup layers
+  // UPDATED: Cleanup layers (includes crop area layers)
   cleanup() {
+    // Clean up analysis layers
     if (this.heatMapLayer) {
       this.map.removeLayer(this.heatMapLayer);
       this.heatMapLayer = null;
@@ -603,6 +798,8 @@ export class MapLayerManager {
       this.map.removeLayer(this.timeSeriesLayer);
       this.timeSeriesLayer = null;
     }
+    
+    // Clean up WMS layers
     if (this.yieldLayer) {
       this.map.removeLayer(this.yieldLayer);
       this.yieldLayer = null;
@@ -615,9 +812,32 @@ export class MapLayerManager {
       this.map.removeLayer(this.lstLayer);
       this.lstLayer = null;
     }
+    
+    // Clean up crop area layers
+    if (this.maizeLayer) {
+      this.map.removeLayer(this.maizeLayer);
+      this.maizeLayer = null;
+    }
+    if (this.sugarCaneLayer) {
+      this.map.removeLayer(this.sugarCaneLayer);
+      this.sugarCaneLayer = null;
+    }
+    if (this.riceLayer) {
+      this.map.removeLayer(this.riceLayer);
+      this.riceLayer = null;
+    }
+    
+    // Clean up vector layer
     if (this.vectorLayer) {
       this.map.removeLayer(this.vectorLayer);
       this.vectorLayer = null;
     }
+    
+    // Clear crop area data cache
+    this.cropAreaLayerData = {
+      maize: null,
+      sugarCane: null,
+      rice: null
+    };
   }
 }
