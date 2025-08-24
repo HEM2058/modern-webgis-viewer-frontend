@@ -1,4 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
+import 'ol/ol.css';
+import { Map, View } from 'ol';
+import { fromLonLat } from 'ol/proj';
+import { defaults as defaultControls } from 'ol/control';
+import { Vector as VectorSource, OSM } from 'ol/source';
+import { Vector as VectorLayer, Tile as TileLayer } from 'ol/layer';
+import { Style, Fill, Stroke } from 'ol/style';
+import { GeoJSON } from 'ol/format';
 
 interface ReportData {
   fieldInfo: any;
@@ -22,71 +32,69 @@ export default function Report({ reportData, onClose, onExport }: ReportProps) {
   const [selectedIndexForChart, setSelectedIndexForChart] = useState(reportData.selectedIndices[0] || 'ndvi');
   const [isExporting, setIsExporting] = useState(false);
 
-  // Simple map placeholder with satellite-like styling
+  // OpenLayers map integration
   useEffect(() => {
-    if (!mapRef.current || !reportData.fieldGeoJson) return;
+    if (!mapRef.current) return;
 
-    // Create a simple visual representation of the field
-    const canvas = document.createElement('canvas');
-    canvas.width = mapRef.current.offsetWidth || 300;
-    canvas.height = mapRef.current.offsetHeight || 200;
-    canvas.style.width = '100%';
-    canvas.style.height = '100%';
-    canvas.style.borderRadius = '8px';
-    
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    // Create base layer (OpenStreetMap)
+    const baseLayer = new TileLayer({
+      source: new OSM(),
+    });
 
-    // Create satellite-like background
-    const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-    gradient.addColorStop(0, '#8B7355');
-    gradient.addColorStop(0.3, '#A0956B');
-    gradient.addColorStop(0.7, '#6B8E3D');
-    gradient.addColorStop(1, '#4A6741');
-    
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // Create vector source and layer for field boundaries
+    const vectorSource = new VectorSource();
+    const vectorLayer = new VectorLayer({
+      source: vectorSource,
+      style: new Style({
+        fill: new Fill({
+          color: 'rgba(34, 197, 94, 0.2)',
+        }),
+        stroke: new Stroke({
+          color: '#22c55e',
+          width: 3,
+        }),
+      }),
+    });
 
-    // Add some texture
-    for (let i = 0; i < 50; i++) {
-      ctx.fillStyle = `rgba(${Math.random() * 100 + 100}, ${Math.random() * 100 + 150}, ${Math.random() * 50 + 50}, 0.3)`;
-      ctx.fillRect(Math.random() * canvas.width, Math.random() * canvas.height, Math.random() * 20 + 5, Math.random() * 20 + 5);
+    // Create map instance
+    const map = new Map({
+      target: mapRef.current,
+      layers: [baseLayer, vectorLayer],
+      view: new View({
+        center: fromLonLat([0, 0]),
+        zoom: 2,
+      }),
+      controls: defaultControls({ zoom: false, attribution: false }),
+    });
+
+    // Add field geometry if available
+    if (reportData.fieldGeoJson) {
+      try {
+        const geoJsonFormat = new GeoJSON();
+        const features = geoJsonFormat.readFeatures(reportData.fieldGeoJson, {
+          featureProjection: map.getView().getProjection(),
+          dataProjection: 'EPSG:4326',
+        });
+
+        vectorSource.addFeatures(features);
+
+        // Zoom to field extent
+        if (features.length > 0) {
+          const extent = vectorSource.getExtent();
+          map.getView().fit(extent, {
+            padding: [20, 20, 20, 20],
+            maxZoom: 18,
+          });
+        }
+      } catch (error) {
+        console.error('Error adding field geometry to report map:', error);
+      }
     }
 
-    // Draw field boundary
-    ctx.strokeStyle = '#10b981';
-    ctx.lineWidth = 3;
-    ctx.fillStyle = 'rgba(16, 185, 129, 0.2)';
-    
-    // Simple field shape
-    const centerX = canvas.width / 2;
-    const centerY = canvas.height / 2;
-    const width = canvas.width * 0.6;
-    const height = canvas.height * 0.6;
-    
-    ctx.beginPath();
-    ctx.ellipse(centerX, centerY, width / 2, height / 2, 0, 0, 2 * Math.PI);
-    ctx.fill();
-    ctx.stroke();
-
-    // Clear and add canvas
-    mapRef.current.innerHTML = '';
-    mapRef.current.appendChild(canvas);
-
-    // Add coordinates overlay
-    const overlay = document.createElement('div');
-    overlay.style.position = 'absolute';
-    overlay.style.bottom = '8px';
-    overlay.style.right = '8px';
-    overlay.style.background = 'rgba(255, 255, 255, 0.9)';
-    overlay.style.padding = '4px 8px';
-    overlay.style.borderRadius = '4px';
-    overlay.style.fontSize = '12px';
-    overlay.style.color = '#666';
-    overlay.textContent = '15°35\'N, 120°52\'E';
-    mapRef.current.style.position = 'relative';
-    mapRef.current.appendChild(overlay);
-
+    // Cleanup function
+    return () => {
+      map.setTarget(undefined);
+    };
   }, [reportData.fieldGeoJson]);
 
   // Helper function to get index description
@@ -152,251 +160,77 @@ export default function Report({ reportData, onClose, onExport }: ReportProps) {
     return { mean, max, min, trend };
   };
 
-  // PDF Export Function
+  // Enhanced PDF Export Function using jsPDF and html2canvas
   const handleExportToPDF = async () => {
     setIsExporting(true);
     try {
-      // Create a new window for printing
-      const printWindow = window.open('', '_blank');
-      if (!printWindow) {
-        alert('Please allow pop-ups to export the report');
+      const reportElement = document.getElementById('pdf-report-content');
+      if (!reportElement) {
+        alert('Report content not found. Please try again.');
         setIsExporting(false);
         return;
       }
 
-      // Get the current content
-      const reportContent = document.querySelector('.report-content')?.innerHTML || '';
+      // Convert HTML to canvas with high resolution
+      const canvas = await html2canvas(reportElement, {
+        scale: 2, // Higher resolution
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+        height: reportElement.scrollHeight,
+        windowHeight: reportElement.scrollHeight,
+        removeContainer: true,
+        logging: false,
+      });
+
+      // Create PDF with proper sizing
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const imgWidth = 210; // A4 width in mm
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
       
-      // Create print-friendly HTML
-      const printHTML = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>${reportData.reportType} - ${reportData.fieldInfo.farm_name}</title>
-          <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .page { max-width: 800px; margin: 0 auto; padding: 20px; }
-            h1 { color: #2d5016; font-size: 24px; margin-bottom: 10px; }
-            h2 { color: #2d5016; font-size: 20px; margin: 20px 0 10px 0; }
-            h3 { color: #2d5016; font-size: 16px; margin: 15px 0 8px 0; }
-            .header { text-align: center; border-bottom: 2px solid #10b981; padding-bottom: 20px; margin-bottom: 30px; }
-            .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin: 20px 0; }
-            .summary-item { text-align: center; padding: 15px; background: #f8f9fa; border-radius: 8px; }
-            .summary-number { font-size: 24px; font-weight: bold; color: #10b981; }
-            .field-details { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0; }
-            .detail-box { background: #f8f9fa; padding: 15px; border-radius: 8px; }
-            .chart-container { background: white; border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin: 20px 0; }
-            .indices-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin: 20px 0; }
-            .index-card { background: white; border: 1px solid #ddd; border-radius: 8px; padding: 15px; }
-            .recommendations-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0; }
-            .rec-box { padding: 15px; border-radius: 8px; }
-            .rec-positive { background: #d1fae5; border: 1px solid #10b981; }
-            .rec-attention { background: #fef3c7; border: 1px solid #f59e0b; }
-            .footer { text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; color: #666; font-size: 12px; }
-            @media print {
-              body { print-color-adjust: exact; }
-              .page { margin: 0; padding: 15px; }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="page">
-            <div class="header">
-              <h1>${reportData.reportType}</h1>
-              <p>Generated on ${new Date(reportData.analysisDate).toLocaleDateString('en-US', {
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
-              })}</p>
-            </div>
+      let heightLeft = imgHeight;
+      let position = 0;
 
-            <h2>Executive Summary</h2>
-            <div class="summary-grid">
-              <div class="summary-item">
-                <div class="summary-number">${reportData.selectedIndices.length}</div>
-                <div>Indices Analyzed</div>
-              </div>
-              <div class="summary-item">
-                <div class="summary-number">${Math.ceil((new Date(reportData.endDate).getTime() - new Date(reportData.startDate).getTime()) / (1000 * 60 * 60 * 24))}</div>
-                <div>Days Analyzed</div>
-              </div>
-              <div class="summary-item">
-                <div class="summary-number">${Object.values(reportData.timeSeriesData).reduce((total, data: any) => {
-                  return total + (data?.results?.length || 0);
-                }, 0)}</div>
-                <div>Total Observations</div>
-              </div>
-            </div>
+      // Add first page
+      pdf.addImage(
+        canvas.toDataURL('image/png', 0.95), 
+        'PNG', 
+        0, 
+        position, 
+        imgWidth, 
+        imgHeight,
+        undefined,
+        'FAST'
+      );
+      heightLeft -= 297; // A4 height in mm
 
-            <h2>Field Information</h2>
-            <div class="field-details">
-              <div class="detail-box">
-                <h3>Field Details</h3>
-                <p><strong>Farm Name:</strong> ${reportData.fieldInfo.farm_name}</p>
-                <p><strong>Farm ID:</strong> ${reportData.fieldInfo.farm_id}</p>
-                <p><strong>Analysis Period:</strong> ${new Date(reportData.startDate).toLocaleDateString()} - ${new Date(reportData.endDate).toLocaleDateString()}</p>
-                <p><strong>Report Type:</strong> ${reportData.reportType}</p>
-              </div>
-              <div class="detail-box">
-                <h3>Field Location</h3>
-                <div style="height: 150px; background: linear-gradient(45deg, #8B7355, #6B8E3D); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;">
-                  Field Boundary Map<br>
-                  <small>15°35'N, 120°52'E</small>
-                </div>
-              </div>
-            </div>
+      // Add additional pages if content is longer than one page
+      while (heightLeft >= 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(
+          canvas.toDataURL('image/png', 0.95), 
+          'PNG', 
+          0, 
+          position, 
+          imgWidth, 
+          imgHeight,
+          undefined,
+          'FAST'
+        );
+        heightLeft -= 297;
+      }
 
-            <h2>Vegetation Index Analysis - ${selectedIndexForChart.toUpperCase()}</h2>
-            <div style="background: #dbeafe; border-left: 4px solid #3b82f6; padding: 15px; margin: 15px 0;">
-              <h4>${selectedIndexForChart.toUpperCase()} - About This Index</h4>
-              <p>${getIndexDescription(selectedIndexForChart)}</p>
-            </div>
-
-            <div class="chart-container">
-              <h3>${selectedIndexForChart.toUpperCase()} Time Series Analysis</h3>
-              <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-top: 15px;">
-                ${(() => {
-                  const data = createChartData(selectedIndexForChart);
-                  const stats = calculateStats(data);
-                  return `
-                    <div style="text-align: center;">
-                      <div style="color: #666; font-size: 14px;">Average</div>
-                      <div style="font-size: 18px; font-weight: bold; color: #10b981;">${stats.mean.toFixed(3)}</div>
-                    </div>
-                    <div style="text-align: center;">
-                      <div style="color: #666; font-size: 14px;">Maximum</div>
-                      <div style="font-size: 18px; font-weight: bold; color: #3b82f6;">${stats.max.toFixed(3)}</div>
-                    </div>
-                    <div style="text-align: center;">
-                      <div style="color: #666; font-size: 14px;">Minimum</div>
-                      <div style="font-size: 18px; font-weight: bold; color: #f59e0b;">${stats.min.toFixed(3)}</div>
-                    </div>
-                    <div style="text-align: center;">
-                      <div style="color: #666; font-size: 14px;">Trend</div>
-                      <div style="font-size: 18px; font-weight: bold; color: ${
-                        stats.trend === 'increasing' ? '#10b981' : 
-                        stats.trend === 'decreasing' ? '#ef4444' : '#666'
-                      };">${stats.trend}</div>
-                    </div>
-                  `;
-                })()}
-              </div>
-              <p style="margin-top: 15px; color: #666; font-size: 14px;">
-                Chart visualization available in digital version. ${createChartData(selectedIndexForChart).length} data points analyzed.
-              </p>
-            </div>
-
-            <h2>All Indices Summary</h2>
-            <div class="indices-grid">
-              ${reportData.selectedIndices.map((indexKey) => {
-                const data = createChartData(indexKey);
-                const stats = calculateStats(data);
-                
-                return `
-                  <div class="index-card">
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-                      <h4>${indexKey.toUpperCase()}</h4>
-                      <span style="padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; color: ${
-                        stats.trend === 'increasing' ? '#10b981' :
-                        stats.trend === 'decreasing' ? '#ef4444' : '#666'
-                      }; background: ${
-                        stats.trend === 'increasing' ? '#d1fae5' :
-                        stats.trend === 'decreasing' ? '#fee2e2' : '#f3f4f6'
-                      };">${stats.trend}</span>
-                    </div>
-                    <div style="font-size: 14px; line-height: 1.5;">
-                      <div><strong>Average:</strong> ${stats.mean.toFixed(3)}</div>
-                      <div><strong>Range:</strong> ${stats.min.toFixed(3)} - ${stats.max.toFixed(3)}</div>
-                      <div><strong>Observations:</strong> ${data.length}</div>
-                    </div>
-                  </div>
-                `;
-              }).join('')}
-            </div>
-
-            <h2>Recommendations & Insights</h2>
-            <div class="recommendations-grid">
-              <div class="rec-box rec-positive">
-                <h4 style="color: #065f46; margin-bottom: 10px;">Positive Indicators</h4>
-                <ul style="color: #065f46;">
-                  <li>Vegetation indices show consistent monitoring coverage</li>
-                  <li>Multiple indices provide comprehensive field assessment</li>
-                  <li>Time series data enables trend analysis</li>
-                </ul>
-              </div>
-              
-              <div class="rec-box rec-attention">
-                <h4 style="color: #92400e; margin-bottom: 10px;">Areas for Attention</h4>
-                <ul style="color: #92400e;">
-                  <li>Monitor vegetation health trends regularly</li>
-                  <li>Consider seasonal variations in analysis</li>
-                  <li>Correlate with weather and farming practices</li>
-                </ul>
-              </div>
-            </div>
-
-            <h2>Technical Information</h2>
-            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px;">
-              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px;">
-                <div>
-                  <h4 style="margin-bottom: 10px;">Data Sources</h4>
-                  <ul style="color: #666; line-height: 1.6;">
-                    <li>Satellite imagery from multiple sensors</li>
-                    <li>Cloud-filtered observations</li>
-                    <li>Geometric and atmospheric corrections applied</li>
-                  </ul>
-                </div>
-                <div>
-                  <h4 style="margin-bottom: 10px;">Processing Details</h4>
-                  <ul style="color: #666; line-height: 1.6;">
-                    <li>Mean values calculated per observation date</li>
-                    <li>Field boundary masking applied</li>
-                    <li>Quality assurance filtering implemented</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-
-            <div class="footer">
-              <p>Report generated by DigiSaka Analytics Platform</p>
-              <p>${new Date().toLocaleDateString('en-US', { 
-                year: 'numeric', 
-                month: 'long', 
-                day: 'numeric' 
-              })}</p>
-            </div>
-          </div>
-        </body>
-        </html>
-      `;
-
-      printWindow.document.write(printHTML);
-      printWindow.document.close();
-
-      // Wait for content to load, then print
-      printWindow.onload = () => {
-        setTimeout(() => {
-          printWindow.print();
-          printWindow.close();
-          setIsExporting(false);
-        }, 1000);
-      };
-
-      // Fallback if onload doesn't fire
-      setTimeout(() => {
-        if (!printWindow.closed) {
-          printWindow.print();
-          printWindow.close();
-        }
-        setIsExporting(false);
-      }, 3000);
-
+      // Generate filename with timestamp
+      const timestamp = new Date().toISOString().split('T')[0];
+      const filename = `${reportData.fieldInfo.farm_name}_${reportData.reportType.replace(/\s+/g, '_')}_${timestamp}.pdf`;
+      
+      // Save the PDF
+      pdf.save(filename);
+      setIsExporting(false);
     } catch (error) {
-      console.error('Export error:', error);
-      alert('Export failed. Please try again.');
+      console.error('PDF Export error:', error);
+      alert('Failed to export PDF. Please ensure your browser allows downloads and try again.');
       setIsExporting(false);
     }
   };
@@ -575,7 +409,7 @@ export default function Report({ reportData, onClose, onExport }: ReportProps) {
           </div>
         </div>
 
-        <div className="p-6 space-y-8 report-content">
+        <div id="pdf-report-content" className="p-6 space-y-8 report-content">
           {/* Executive Summary */}
           <div className="bg-gradient-to-r from-emerald-50 to-blue-50 rounded-lg p-6">
             <h2 className="text-xl font-semibold text-gray-800 mb-4">Executive Summary</h2>
@@ -634,9 +468,17 @@ export default function Report({ reportData, onClose, onExport }: ReportProps) {
                 <h3 className="text-lg font-medium text-gray-800 mb-4">Field Location</h3>
                 <div className="relative h-48 bg-gray-200 rounded-lg overflow-hidden">
                   <div ref={mapRef} className="w-full h-full"></div>
-                  <div className="absolute top-2 left-2 bg-white rounded px-2 py-1 text-xs font-medium">
-                    Field Boundary
+                  <div className="absolute top-2 left-2 bg-white bg-opacity-90 rounded px-2 py-1 text-xs font-medium shadow-sm">
+                    Field Boundary - OpenLayers
                   </div>
+                  {!reportData.fieldGeoJson && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-gray-100 bg-opacity-90">
+                      <div className="text-center">
+                        <i className="text-2xl text-gray-400 mb-2">🗺️</i>
+                        <p className="text-sm text-gray-500">Field boundary data not available</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

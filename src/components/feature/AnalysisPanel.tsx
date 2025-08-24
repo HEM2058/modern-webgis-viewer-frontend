@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
+import Report from './Report';
 
 interface AnalysisPanelProps {
   isOpen: boolean;
@@ -759,64 +760,10 @@ export default function AnalysisPanel({
     );
   };
 
-  // Export report as PDF
-  const exportReportAsPDF = () => {
-    if (!reportData) return;
-
-    // Create a new window with the report content for printing
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
-
-    const reportHTML = `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>${reportData.reportType} - ${reportData.fieldInfo.farm_name}</title>
-          <style>
-            body { font-family: Arial, sans-serif; margin: 20px; }
-            .header { text-align: center; margin-bottom: 30px; }
-            .field-info { background: #f5f5f5; padding: 15px; margin-bottom: 20px; }
-            .chart-container { margin: 20px 0; }
-            table { width: 100%; border-collapse: collapse; }
-            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-            th { background-color: #f2f2f2; }
-            @media print { 
-              body { margin: 0; }
-              .no-print { display: none; }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <h1>${reportData.reportType}</h1>
-            <h2>${reportData.fieldInfo.farm_name}</h2>
-            <p>Generated on: ${new Date(reportData.analysisDate).toLocaleDateString()}</p>
-          </div>
-          
-          <div class="field-info">
-            <h3>Field Information</h3>
-            <p><strong>Farm ID:</strong> ${reportData.fieldInfo.farm_id}</p>
-            <p><strong>Farm Name:</strong> ${reportData.fieldInfo.farm_name}</p>
-            <p><strong>Analysis Period:</strong> ${startDate} to ${endDate}</p>
-            <p><strong>Indices Analyzed:</strong> ${reportData.selectedIndices.join(', ').toUpperCase()}</p>
-          </div>
-          
-          <div class="chart-container">
-            <h3>Time Series Analysis Summary</h3>
-            <p>Detailed time series charts and analysis data would be rendered here in a full implementation.</p>
-          </div>
-        </body>
-      </html>
-    `;
-
-    printWindow.document.write(reportHTML);
-    printWindow.document.close();
-    
-    // Wait for content to load then print
-    setTimeout(() => {
-      printWindow.print();
-      printWindow.close();
-    }, 500);
+  // Close report modal
+  const closeReportModal = () => {
+    setShowReportModal(false);
+    setReportData(null);
   };
 
   const chartData = createChartData();
@@ -1449,190 +1396,19 @@ export default function AnalysisPanel({
 
       {/* Report Modal */}
       {showReportModal && reportData && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between p-6 border-b border-gray-200">
-              <div>
-                <h2 className="text-xl font-semibold text-gray-800">{reportData.reportType}</h2>
-                <p className="text-sm text-gray-600">Generated on {new Date(reportData.analysisDate).toLocaleDateString()}</p>
-              </div>
-              <div className="flex items-center space-x-2">
-                <button
-                  onClick={exportReportAsPDF}
-                  className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 flex items-center text-sm"
-                >
-                  <i className="ri-download-line mr-2"></i>
-                  Export PDF
-                </button>
-                <button
-                  onClick={() => setShowReportModal(false)}
-                  className="p-2 text-gray-400 hover:text-gray-600 rounded-lg"
-                >
-                  <i className="ri-close-line text-xl"></i>
-                </button>
-              </div>
-            </div>
-
-            {/* Modal Content */}
-            <div className="p-6">
-              {/* Field Information Section */}
-              <div className="mb-8">
-                <h3 className="text-lg font-semibold text-gray-800 mb-4">Field Information</h3>
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                    <div>
-                      <label className="text-xs font-medium text-gray-600">Farm Name</label>
-                      <p className="text-sm font-semibold text-gray-800">{reportData.fieldInfo.farm_name}</p>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-gray-600">Farm ID</label>
-                      <p className="text-sm font-semibold text-gray-800">{reportData.fieldInfo.farm_id}</p>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-gray-600">Analysis Period</label>
-                      <p className="text-sm font-semibold text-gray-800">{startDate} to {endDate}</p>
-                    </div>
-                    <div className="md:col-span-3">
-                      <label className="text-xs font-medium text-gray-600">Indices Analyzed</label>
-                      <p className="text-sm font-semibold text-gray-800">
-                        {reportData.selectedIndices.map(index => index.toUpperCase()).join(', ')}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Field Map Placeholder */}
-              <div className="mb-8">
-                <h3 className="text-lg font-semibold text-gray-800 mb-4">Field Location</h3>
-                <div className="bg-gray-100 rounded-lg h-64 flex items-center justify-center">
-                  <div className="text-center">
-                    <i className="ri-map-2-line text-4xl text-gray-400 mb-2"></i>
-                    <p className="text-gray-500">Field boundary map would be displayed here</p>
-                    <p className="text-xs text-gray-400">Interactive map showing field boundaries and location</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Time Series Charts */}
-              <div className="mb-8">
-                <h3 className="text-lg font-semibold text-gray-800 mb-4">Time Series Analysis</h3>
-                
-                {/* Sample Chart for Each Selected Index */}
-                {reportData.selectedIndices.slice(0, 3).map((indexKey) => {
-                  const indexData = reportData.timeSeriesData[indexKey];
-                  if (!indexData?.results) return null;
-
-                  const chartData = indexData.results.map((item: any) => ({
-                    date: item.date,
-                    value: item.mean_index_value
-                  }));
-
-                  const maxVal = Math.max(...chartData.map(d => d.value));
-                  const minVal = Math.min(...chartData.map(d => d.value));
-
-                  return (
-                    <div key={indexKey} className="mb-6 bg-gray-50 rounded-lg p-6">
-                      <h4 className="text-md font-medium text-gray-800 mb-4">
-                        {indexKey.toUpperCase()} Time Series
-                      </h4>
-                      
-                      {/* Simple SVG Chart */}
-                      <div className="relative h-64 bg-white rounded border">
-                        <svg width="100%" height="100%" viewBox="0 0 600 250" className="overflow-visible">
-                          {/* Grid lines */}
-                          {[0, 0.25, 0.5, 0.75, 1].map((ratio, index) => {
-                            const y = 220 - (ratio * 180);
-                            const value = minVal + (maxVal - minVal) * ratio;
-                            return (
-                              <g key={index}>
-                                <line x1="60" y1={y} x2="580" y2={y} stroke="#e5e7eb" strokeWidth="1"/>
-                                <text x="55" y={y + 3} fill="#6b7280" fontSize="12" textAnchor="end">
-                                  {value.toFixed(2)}
-                                </text>
-                              </g>
-                            );
-                          })}
-                          
-                          {/* Chart line */}
-                          <path
-                            d={chartData.map((data, index) => {
-                              const x = 60 + (index / (chartData.length - 1)) * 520;
-                              const normalizedValue = maxVal > minVal 
-                                ? ((data.value - minVal) / (maxVal - minVal))
-                                : 0.5;
-                              const y = 220 - (normalizedValue * 180);
-                              return `${index === 0 ? 'M' : 'L'} ${x} ${y}`;
-                            }).join(' ')}
-                            fill="none"
-                            stroke="#10b981"
-                            strokeWidth="2"
-                          />
-                          
-                          {/* Data points */}
-                          {chartData.map((data, index) => {
-                            const x = 60 + (index / (chartData.length - 1)) * 520;
-                            const normalizedValue = maxVal > minVal 
-                              ? ((data.value - minVal) / (maxVal - minVal))
-                              : 0.5;
-                            const y = 220 - (normalizedValue * 180);
-                            
-                            return (
-                              <circle
-                                key={index}
-                                cx={x}
-                                cy={y}
-                                r="3"
-                                fill="#10b981"
-                                stroke="white"
-                                strokeWidth="2"
-                              />
-                            );
-                          })}
-                          
-                          {/* Axes */}
-                          <line x1="60" y1="40" x2="60" y2="220" stroke="#6b7280" strokeWidth="1"/>
-                          <line x1="60" y1="220" x2="580" y2="220" stroke="#6b7280" strokeWidth="1"/>
-                        </svg>
-                      </div>
-
-                      {/* Summary Statistics */}
-                      <div className="mt-4 grid grid-cols-3 gap-4">
-                        <div className="text-center">
-                          <p className="text-xs text-gray-600">Average</p>
-                          <p className="text-lg font-semibold text-emerald-600">
-                            {(chartData.reduce((sum, d) => sum + d.value, 0) / chartData.length).toFixed(3)}
-                          </p>
-                        </div>
-                        <div className="text-center">
-                          <p className="text-xs text-gray-600">Maximum</p>
-                          <p className="text-lg font-semibold text-blue-600">{maxVal.toFixed(3)}</p>
-                        </div>
-                        <div className="text-center">
-                          <p className="text-xs text-gray-600">Minimum</p>
-                          <p className="text-lg font-semibold text-orange-600">{minVal.toFixed(3)}</p>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Report Summary */}
-              <div className="mb-6">
-                <h3 className="text-lg font-semibold text-gray-800 mb-4">Analysis Summary</h3>
-                <div className="bg-blue-50 rounded-lg p-4">
-                  <p className="text-sm text-gray-700">
-                    This {reportData.reportType.toLowerCase()} provides comprehensive analysis of {reportData.fieldInfo.farm_name} 
-                    using {reportData.selectedIndices.length} vegetation indices over the period from {startDate} to {endDate}. 
-                    The analysis includes time series visualization, statistical summaries, and field boundary mapping.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <Report
+          reportData={{
+            ...reportData,
+            startDate,
+            endDate,
+            fieldGeoJson
+          }}
+          fieldGeoJson={fieldGeoJson}
+          startDate={startDate}
+          endDate={endDate}
+          isVisible={showReportModal}
+          onClose={closeReportModal}
+        />
       )}
     </>
   );
