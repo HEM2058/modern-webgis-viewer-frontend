@@ -238,6 +238,12 @@ export default function MapView({
       return;
     }
     
+    // Handle crop area layers
+    if (['maize', 'sugarCane', 'rice'].includes(layerType) && layerManagerRef.current) {
+      handleCropAreaLayerToggle(layerType as 'maize' | 'sugarCane' | 'rice', visible);
+      return;
+    }
+    
     // Handle non-WMS layers locally
     setLayerVisibility(prev => ({ ...prev, [layerType]: visible }));
     
@@ -248,6 +254,48 @@ export default function MapView({
     }
   };
 
+  // Handle crop area layer toggle with loading states
+  const handleCropAreaLayerToggle = async (cropType: 'maize' | 'sugarCane' | 'rice', visible: boolean) => {
+    if (!layerManagerRef.current || !mapInstanceRef.current) return;
+
+    // Update local state immediately for UI feedback
+    setLayerVisibility(prev => ({ ...prev, [cropType]: visible }));
+
+    // If enabling a crop area layer, pan to Philippines and set zoom to 10
+    if (visible && mapInstanceRef.current) {
+      console.log(`MapView: Centering map to Philippines for ${cropType} crop area layer`);
+      mapInstanceRef.current.getView().animate({
+        center: fromLonLat([124.659593, 8.067894]),
+        zoom: 10,
+        duration: 1000
+      });
+    }
+
+    try {
+      // Use the MapLayerManager to toggle the crop area layer
+      await layerManagerRef.current.toggleCropAreaLayer(
+        cropType, 
+        visible,
+        // Optional loading callbacks can be added here
+        () => {
+          console.log(`Loading ${cropType} crop area layer...`);
+          return 'loading'; // You can integrate with a toast system here
+        },
+        (toastId: string, success: boolean, message: string) => {
+          console.log(`Crop area layer ${cropType}: ${message}`);
+          if (!success) {
+            // Revert local state if loading failed
+            setLayerVisibility(prev => ({ ...prev, [cropType]: false }));
+          }
+        }
+      );
+    } catch (error) {
+      console.error(`Error toggling ${cropType} crop area layer:`, error);
+      // Revert local state on error
+      setLayerVisibility(prev => ({ ...prev, [cropType]: false }));
+    }
+  };
+
   // Handle opacity change
   const handleOpacityChange = (layerType: keyof LayerOpacityState, opacity: number) => {
     setLayerOpacity(prev => ({ ...prev, [layerType]: opacity }));
@@ -255,6 +303,8 @@ export default function MapView({
     if (layerManagerRef.current) {
       if (['yield', 'vhi', 'lst'].includes(layerType)) {
         layerManagerRef.current.setWMSLayerOpacity(layerType as 'yield' | 'vhi' | 'lst', opacity);
+      } else if (['maize', 'sugarCane', 'rice'].includes(layerType)) {
+        layerManagerRef.current.setCropAreaLayerOpacity(layerType as 'maize' | 'sugarCane' | 'rice', opacity);
       } else if (layerType === 'heatMap' || layerType === 'timeSeries') {
         layerManagerRef.current.adjustLayerOpacity(layerType, opacity);
       }
@@ -506,6 +556,15 @@ export default function MapView({
     // Initialize layer manager
     layerManagerRef.current = new MapLayerManager(map);
     console.log('MapView: MapLayerManager initialized');
+    
+    // Expose debug methods to global scope for troubleshooting
+    (window as any).debugMapLayers = {
+      debugWMSLayers: () => layerManagerRef.current?.debugWMSLayers(),
+      testYieldLayer: () => layerManagerRef.current?.testYieldLayer(),
+      fixYieldLayer: () => layerManagerRef.current?.fixYieldLayer(),
+      refreshAllWMSLayers: () => layerManagerRef.current?.refreshAllVisibleWMSLayers()
+    };
+    console.log('MapView: Debug methods exposed to window.debugMapLayers');
     
     // Add base layer
     const baseLayers = MapLayerManager.createBaseLayers();

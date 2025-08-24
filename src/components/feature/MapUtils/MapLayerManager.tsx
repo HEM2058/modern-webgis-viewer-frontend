@@ -134,7 +134,7 @@ export class MapLayerManager {
   private initializeWMSLayers() {
     console.log('MapLayerManager: Initializing WMS layers...');
 
-    // Yield Layer - Enhanced with better caching control
+    // Yield Layer - Simplified configuration
     this.yieldLayer = new ImageLayer({
       source: new ImageWMS({
         url: this.wmsConfigs.yield.url,
@@ -145,22 +145,16 @@ export class MapLayerManager {
           'TIME': this.wmsConfigs.yield.defaultTime,
           'STYLES': this.wmsConfigs.yield.styles || '',
           'VERSION': '1.1.1',
-          'SRS': 'EPSG:3857',
-          'TILED': true,
-          'CQL_FILTER': undefined
+          'SRS': 'EPSG:3857'
         },
         serverType: 'geoserver',
-        crossOrigin: 'anonymous',
-        imageLoadFunction: (image, src) => {
-          const imgElement = image.getImage() as HTMLImageElement;
-          const separator = src.includes('?') ? '&' : '?';
-          const cacheBuster = `${separator}_=${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-          imgElement.src = src + cacheBuster;
-        }
+        crossOrigin: 'anonymous'
       }),
       visible: this.wmsConfigs.yield.visible,
       opacity: 0.8,
     });
+    
+    console.log('MapLayerManager: Yield layer initialized with params:', this.yieldLayer.getSource()?.getParams());
 
     // VHI Layer
     this.vhiLayer = new ImageLayer({
@@ -209,11 +203,25 @@ export class MapLayerManager {
     this.vhiLayer.setZIndex(101);
     this.lstLayer.setZIndex(102);
 
+    console.log('MapLayerManager: Adding yield layer to map...');
     this.map.addLayer(this.yieldLayer);
+    console.log('MapLayerManager: Yield layer added. Layer count:', this.map.getLayers().getLength());
+    
+    console.log('MapLayerManager: Adding VHI layer to map...');
     this.map.addLayer(this.vhiLayer);
+    console.log('MapLayerManager: VHI layer added. Layer count:', this.map.getLayers().getLength());
+    
+    console.log('MapLayerManager: Adding LST layer to map...');
     this.map.addLayer(this.lstLayer);
+    console.log('MapLayerManager: LST layer added. Layer count:', this.map.getLayers().getLength());
 
     console.log('MapLayerManager: WMS layers initialized and added to map');
+    
+    // Debug all layer configurations
+    console.log('MapLayerManager: Layer configurations:');
+    console.log('Yield:', this.wmsConfigs.yield);
+    console.log('VHI:', this.wmsConfigs.vhi);
+    console.log('LST:', this.wmsConfigs.lst);
   }
 
   // NEW: Fetch crop area layer data
@@ -444,6 +452,9 @@ export class MapLayerManager {
       return;
     }
 
+    console.log(`MapLayerManager: Layer ${layerType} exists:`, !!targetLayer);
+    console.log(`MapLayerManager: Layer ${layerType} currently visible:`, targetLayer.getVisible());
+
     if (visible) {
       // Hide all other WMS layers first (mutual exclusivity)
       const allLayers: ('yield' | 'vhi' | 'lst')[] = ['yield', 'vhi', 'lst'];
@@ -459,7 +470,9 @@ export class MapLayerManager {
       });
 
       // Show the target layer
+      console.log(`MapLayerManager: Setting ${layerType} layer visible to true`);
       targetLayer.setVisible(true);
+      console.log(`MapLayerManager: ${layerType} layer visible after setting:`, targetLayer.getVisible());
       
       // Set zoom to level 9 when showing any WMS layer
       const currentZoom = this.map.getView().getZoom() || 16;
@@ -475,20 +488,24 @@ export class MapLayerManager {
       if (source) {
         console.log(`MapLayerManager: Refreshing ${layerType} layer source`);
         
-        // For yield layer, add additional cache-busting
+        // Debug yield layer specifically
         if (layerType === 'yield') {
           const currentParams = source.getParams();
-          const timestamp = Date.now();
-          const random = Math.random().toString(36).substr(2, 9);
+          console.log(`MapLayerManager: Yield layer current params:`, currentParams);
+          console.log(`MapLayerManager: Yield layer URL:`, source.getUrl());
           
-          // Update params with cache buster
+          // Check if layer is actually in the map
+          const layerInMap = this.map.getLayers().getArray().includes(targetLayer);
+          console.log(`MapLayerManager: Yield layer in map:`, layerInMap);
+          console.log(`MapLayerManager: Yield layer z-index:`, targetLayer.getZIndex());
+          console.log(`MapLayerManager: Yield layer opacity:`, targetLayer.getOpacity());
+          
+          // Force update params to trigger refresh
           source.updateParams({
             ...currentParams,
-            '_t': timestamp,
-            '_r': random
+            '_refresh': Date.now()
           });
-          
-          console.log(`MapLayerManager: ${layerType} cache-busted params:`, source.getParams());
+          console.log(`MapLayerManager: Yield layer params after refresh update:`, source.getParams());
         }
         
         // Force refresh
@@ -510,14 +527,50 @@ export class MapLayerManager {
         if (extent && resolution && projection) {
           console.log(`MapLayerManager: ${layerType} request extent:`, extent);
           console.log(`MapLayerManager: ${layerType} resolution:`, resolution);
+          
+          // For yield layer, let's manually construct and log the expected GetMap URL
+          if (layerType === 'yield') {
+            const size = this.map.getSize() || [512, 512];
+            const testParams = new URLSearchParams({
+              SERVICE: 'WMS',
+              VERSION: '1.1.1',
+              REQUEST: 'GetMap',
+              LAYERS: params['LAYERS'],
+              STYLES: params['STYLES'] || '',
+              FORMAT: params['FORMAT'],
+              TRANSPARENT: params['TRANSPARENT'],
+              TIME: params['TIME'],
+              SRS: params['SRS'],
+              BBOX: extent.join(','),
+              WIDTH: size[0].toString(),
+              HEIGHT: size[1].toString()
+            });
+            
+            const expectedUrl = `${url}?${testParams.toString()}`;
+            console.log(`MapLayerManager: Expected yield GetMap URL:`, expectedUrl);
+          }
+        }
+        
+        // Additional debugging for yield layer
+        if (layerType === 'yield') {
+          // Wait a moment and check if requests are being made
+          setTimeout(() => {
+            console.log(`MapLayerManager: Yield layer status after 1 second:`, {
+              visible: targetLayer.getVisible(),
+              inMap: this.map.getLayers().getArray().includes(targetLayer),
+              sourceState: source.getState()
+            });
+          }, 1000);
         }
       }
     } else {
       // Simply hide the layer
+      console.log(`MapLayerManager: Setting ${layerType} layer visible to false`);
       targetLayer.setVisible(false);
     }
     
     // Trigger map render
+    console.log(`MapLayerManager: Rendering map after ${layerType} layer toggle`);
     this.map.render();
   }
 
@@ -531,10 +584,9 @@ export class MapLayerManager {
       
       const updateParams: any = { 'TIME': dateTime };
       
-      // Add cache busting for yield layer
+      // Debug yield layer time update
       if (layerType === 'yield') {
-        updateParams['_t'] = Date.now();
-        updateParams['_r'] = Math.random().toString(36).substr(2, 9);
+        console.log(`MapLayerManager: Updating yield layer time from ${source.getParams()['TIME']} to ${dateTime}`);
       }
       
       // Update the TIME parameter and cache busters
@@ -677,6 +729,115 @@ export class MapLayerManager {
         }
       }
     });
+  }
+
+  // Test yield layer specifically
+  testYieldLayer() {
+    console.log('MapLayerManager: Testing yield layer specifically...');
+    
+    if (!this.yieldLayer) {
+      console.error('Yield layer not initialized!');
+      return;
+    }
+    
+    const source = this.yieldLayer.getSource() as ImageWMS;
+    if (!source) {
+      console.error('Yield layer source not found!');
+      return;
+    }
+    
+    // Log all details
+    console.log('Yield layer details:', {
+      visible: this.yieldLayer.getVisible(),
+      opacity: this.yieldLayer.getOpacity(),
+      zIndex: this.yieldLayer.getZIndex(),
+      params: source.getParams(),
+      url: source.getUrl(),
+      extent: this.yieldLayer.getExtent(),
+      inMap: this.map.getLayers().getArray().includes(this.yieldLayer)
+    });
+    
+    // Test with a simple GetMap request
+    const view = this.map.getView();
+    const extent = view.calculateExtent();
+    const size = this.map.getSize();
+    const projection = view.getProjection();
+    
+    if (extent && size && projection) {
+      console.log('Current map view:', {
+        extent: extent,
+        size: size,
+        projection: projection.getCode(),
+        zoom: view.getZoom(),
+        resolution: view.getResolution()
+      });
+      
+      // Construct a test URL manually
+      const params = new URLSearchParams({
+        SERVICE: 'WMS',
+        VERSION: '1.1.1',
+        REQUEST: 'GetMap',
+        LAYERS: this.wmsConfigs.yield.layers,
+        STYLES: this.wmsConfigs.yield.styles,
+        FORMAT: 'image/png',
+        TRANSPARENT: 'true',
+        TIME: this.wmsConfigs.yield.defaultTime,
+        SRS: 'EPSG:3857',
+        BBOX: extent.join(','),
+        WIDTH: size[0].toString(),
+        HEIGHT: size[1].toString()
+      });
+      
+      const testUrl = `${this.wmsConfigs.yield.url}?${params.toString()}`;
+      console.log('Manual test URL for yield layer:');
+      console.log(testUrl);
+    }
+    
+    // Force a refresh
+    source.refresh();
+    this.map.render();
+    console.log('Yield layer refreshed and map re-rendered');
+  }
+
+  // Fix yield layer - recreate if necessary
+  fixYieldLayer() {
+    console.log('MapLayerManager: Attempting to fix yield layer...');
+    
+    // Remove existing yield layer if it exists
+    if (this.yieldLayer) {
+      console.log('MapLayerManager: Removing existing yield layer');
+      this.map.removeLayer(this.yieldLayer);
+    }
+    
+    // Recreate yield layer
+    console.log('MapLayerManager: Recreating yield layer...');
+    this.yieldLayer = new ImageLayer({
+      source: new ImageWMS({
+        url: this.wmsConfigs.yield.url,
+        params: {
+          'LAYERS': this.wmsConfigs.yield.layers,
+          'FORMAT': 'image/png',
+          'TRANSPARENT': true,
+          'TIME': this.wmsConfigs.yield.defaultTime,
+          'STYLES': this.wmsConfigs.yield.styles || '',
+          'VERSION': '1.1.1',
+          'SRS': 'EPSG:3857'
+        },
+        serverType: 'geoserver',
+        crossOrigin: 'anonymous'
+      }),
+      visible: false,
+      opacity: 0.8,
+    });
+    
+    this.yieldLayer.setZIndex(100);
+    this.map.addLayer(this.yieldLayer);
+    
+    console.log('MapLayerManager: Yield layer recreated and added to map');
+    console.log('MapLayerManager: New yield layer params:', this.yieldLayer.getSource()?.getParams());
+    
+    // Test the new layer
+    this.testYieldLayer();
   }
 
   // Update heat map layer

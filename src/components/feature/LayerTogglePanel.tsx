@@ -7,7 +7,6 @@ interface LayerTogglePanelProps {
   onLayerToggle: (layerType: keyof LayerVisibilityState, visible: boolean) => void;
   onOpacityChange: (layerType: keyof LayerOpacityState, opacity: number) => void;
   legendUrls?: Record<string, string>;
-  onCropAreaLayerToggle?: (cropType: 'maize' | 'sugarCane' | 'rice', visible: boolean) => void;
 }
 
 export default function LayerTogglePanel({
@@ -15,11 +14,11 @@ export default function LayerTogglePanel({
   layerOpacity,
   onLayerToggle,
   onOpacityChange,
-  legendUrls = {},
-  onCropAreaLayerToggle
+  legendUrls = {}
 }: LayerTogglePanelProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'timeSeries' | 'cropArea'>('timeSeries');
+  const [loadingLayers, setLoadingLayers] = useState<Set<string>>(new Set());
   const panelRef = useRef<HTMLDivElement>(null);
 
   // Close panel when clicking outside
@@ -72,21 +71,21 @@ export default function LayerTogglePanel({
         label: 'Maize Area Map',
         icon: 'ri-seedling-line',
         color: 'text-yellow-600',
-        description: 'Philippines Maize cultivation areas'
+        description: 'Philippines Maize cultivation areas from World Cereal dataset'
       },
       {
         key: 'sugarCane' as const,
         label: 'Sugarcane Area Map', 
         icon: 'ri-plant-line',
         color: 'text-green-600',
-        description: 'Philippines Sugarcane cultivation areas'
+        description: 'Philippines Sugarcane cultivation areas from World Cereal dataset'
       },
       {
         key: 'rice' as const,
         label: 'Rice Area Map',
         icon: 'ri-seedling-fill',
         color: 'text-green-700',
-        description: 'Philippines Rice cultivation areas'
+        description: 'Philippines Rice cultivation areas from World Cereal dataset'
       }
     ]
   };
@@ -119,13 +118,7 @@ export default function LayerTogglePanel({
 
   const handleCropAreaLayerToggle = (layerKey: keyof LayerVisibilityState) => {
     const isVisible = layerVisibility[layerKey];
-    
-    // For crop area layers, use the special handler if available
-    if (['maize', 'sugarCane', 'rice'].includes(layerKey) && onCropAreaLayerToggle) {
-      onCropAreaLayerToggle(layerKey as 'maize' | 'sugarCane' | 'rice', !isVisible);
-    } else {
-      onLayerToggle(layerKey, !isVisible);
-    }
+    onLayerToggle(layerKey, !isVisible);
   };
 
   const getVisibleLayersCount = (tab: 'timeSeries' | 'cropArea') => {
@@ -212,9 +205,32 @@ export default function LayerTogglePanel({
   const renderCropAreaLayerItem = (config: typeof layerConfigs.cropArea[0]) => {
     const isVisible = layerVisibility[config.key];
     const opacity = layerOpacity[config.key];
+    const isLoading = loadingLayers.has(config.key);
+
+    const handleToggle = async () => {
+      if (isLoading) return; // Prevent multiple clicks during loading
+      
+      if (!isVisible) {
+        // Show loading state when enabling
+        setLoadingLayers(prev => new Set([...prev, config.key]));
+      }
+      
+      handleCropAreaLayerToggle(config.key);
+      
+      // Remove loading state after a delay (the actual loading is handled in MapView)
+      setTimeout(() => {
+        setLoadingLayers(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(config.key);
+          return newSet;
+        });
+      }, 3000); // 3 second timeout
+    };
 
     return (
-      <div key={config.key} className="bg-white rounded-lg p-4 border border-gray-200 hover:border-gray-300 transition-colors">
+      <div key={config.key} className={`bg-white rounded-lg p-4 border-2 transition-all duration-200 ${
+        isVisible ? 'border-green-500 bg-green-50' : 'border-gray-200 hover:border-gray-300'
+      } ${isLoading ? 'opacity-75' : ''}`}>
         {/* Layer Header */}
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center space-x-3">
@@ -222,27 +238,54 @@ export default function LayerTogglePanel({
               <input
                 type="checkbox"
                 checked={isVisible}
-                onChange={() => handleCropAreaLayerToggle(config.key)}
-                className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                onChange={handleToggle}
+                disabled={isLoading}
+                className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 disabled:opacity-50"
               />
-              <i className={`${config.icon} ${config.color} text-lg`}></i>
-              <span className="font-medium text-gray-900">{config.label}</span>
+              {isLoading ? (
+                <div className="animate-spin h-4 w-4 border-2 border-emerald-500 rounded-full border-t-transparent"></div>
+              ) : (
+                <i className={`${config.icon} ${config.color} text-lg`}></i>
+              )}
+              <span className={`font-medium ${
+                isVisible ? 'text-green-900' : 'text-gray-900'
+              } ${isLoading ? 'opacity-75' : ''}`}>
+                {config.label}
+                {isLoading && <span className="text-xs text-emerald-600 ml-2">(Loading...)</span>}
+              </span>
             </label>
           </div>
           
-          {/* Visibility indicator */}
-          <div className={`w-2 h-2 rounded-full ${isVisible ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+          {/* Status indicator */}
+          <div className={`w-2 h-2 rounded-full ${
+            isLoading ? 'bg-yellow-500 animate-pulse' : 
+            isVisible ? 'bg-green-500' : 'bg-gray-300'
+          }`}></div>
         </div>
 
         {/* Layer Description */}
-        <p className="text-xs text-gray-600 mb-3">{config.description}</p>
+        <p className={`text-xs mb-3 ${
+          isVisible ? 'text-green-700' : 'text-gray-600'
+        }`}>{config.description}</p>
+
+        {/* Loading Progress */}
+        {isLoading && (
+          <div className="mb-3">
+            <div className="flex items-center justify-between text-xs text-emerald-600 mb-1">
+              <span>Fetching crop area data...</span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-1.5">
+              <div className="bg-emerald-500 h-1.5 rounded-full animate-pulse" style={{ width: '60%' }}></div>
+            </div>
+          </div>
+        )}
 
         {/* Opacity Slider */}
-        {isVisible && (
+        {isVisible && !isLoading && (
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-xs text-gray-500">Opacity</span>
-              <span className="text-xs font-medium text-gray-700">{Math.round(opacity * 100)}%</span>
+              <span className="text-xs text-green-600">Opacity</span>
+              <span className="text-xs font-medium text-green-700">{Math.round(opacity * 100)}%</span>
             </div>
             <input
               type="range"
@@ -253,6 +296,16 @@ export default function LayerTogglePanel({
               onChange={(e) => onOpacityChange(config.key, parseFloat(e.target.value))}
               className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer opacity-slider"
             />
+          </div>
+        )}
+
+        {/* API Info */}
+        {isVisible && !isLoading && (
+          <div className="mt-3 pt-2 border-t border-green-200">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-green-600">Data Source</span>
+              <span className="text-green-700 font-medium">World Cereal API</span>
+            </div>
           </div>
         )}
       </div>
