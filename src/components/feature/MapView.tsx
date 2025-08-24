@@ -745,24 +745,7 @@ console.log(activeWMSLayer)
         </div>
       )}
 
-      {/* Drawing Mode Indicator */}
-      {isDrawingMode && (
-        <div className="absolute top-4 left-4 z-20 bg-blue-600 text-white px-4 py-2 rounded-lg shadow-lg">
-          <div className="flex items-center space-x-2">
-            <i className="ri-pencil-line"></i>
-            <span className="text-sm font-medium">Drawing Mode</span>
-          </div>
-          <div className="text-xs mt-1 opacity-90">
-            Click to draw field boundary, double-click to finish
-          </div>
-          <button
-            onClick={clearDrawnFeatures}
-            className="mt-2 text-xs bg-red-500 hover:bg-red-600 px-2 py-1 rounded"
-          >
-            Clear Drawings
-          </button>
-        </div>
-      )}
+
       
       {/* Map Controls */}
       <MapControls

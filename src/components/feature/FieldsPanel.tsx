@@ -435,8 +435,8 @@ export default function FieldsPanel({
                           <div className={`flex items-center text-xs mb-1 ${
                             isSelected ? 'text-yellow-300' : 'text-yellow-400'
                           }`}>
-                            <i className="ri-notification-line mr-1"></i>
-                            NDVI Map Available
+                            {/* <i className="ri-notification-line mr-1"></i>
+                            NDVI Map Available */}
                           </div>
                         )}
                         

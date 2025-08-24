@@ -3,6 +3,7 @@ import axios from 'axios';
 import Sidebar from '../../components/feature/Sidebar';
 import AnalysisPanel from '../../components/feature/AnalysisPanel';
 import MapView from '../../components/feature/MapView';
+import SaveFieldModal from '../../components/feature/SaveFieldModal'; // Import the SaveFieldModal
 import { useWMSLayers } from '../../components/feature/MapUtils/hooks/useWMSLayers';
 import type { WMSLayerData } from '../../components/feature/MapUtils/hooks/useWMSLayers';
 import logo from "../../assets/logo.png";
@@ -553,6 +554,29 @@ export default function Home() {
     console.log('Time series slider changed:', imageData);
   };
 
+  // Handle successful field save from SaveFieldModal
+  const handleFieldSaved = (savedFieldData) => {
+    console.log('Field saved successfully:', savedFieldData);
+    
+    // Clear the drawn field and close modal
+    setDrawnField(null);
+    setShowSaveModal(false);
+    
+    // You might want to refresh the fields list or update the selected field
+    // This depends on your sidebar implementation
+    
+    // Show success message
+    console.log('Field has been saved to the database');
+    
+    // Optional: You could trigger a refresh of the fields list here
+    // or update the selectedField with the saved field data
+  };
+
+  // Handle closing the save modal
+  const handleCloseSaveModal = () => {
+    setShowSaveModal(false);
+  };
+
   return (
     <div className="h-screen flex overflow-hidden bg-gray-100">
       {/* Sidebar */}
@@ -726,16 +750,12 @@ export default function Home() {
         />
       )}
 
-      {/* Save Field Modal - You'll need to create this component */}
-      {showSaveModal && (
+      {/* Save Field Modal */}
+      {showSaveModal && drawnField && (
         <SaveFieldModal
           drawnField={drawnField}
-          onClose={() => setShowSaveModal(false)}
-          onSave={(savedField) => {
-            setDrawnField(null);
-            setShowSaveModal(false);
-            console.log('Field saved:', savedField);
-          }}
+          onClose={handleCloseSaveModal}
+          onSave={handleFieldSaved}
         />
       )}
     </div>
