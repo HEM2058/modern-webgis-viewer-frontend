@@ -6,7 +6,7 @@ import MapView from '../../components/feature/MapView';
 import SaveFieldModal from '../../components/feature/SaveFieldModal'; // Import the SaveFieldModal
 import { useWMSLayers } from '../../components/feature/MapUtils/hooks/useWMSLayers';
 import type { WMSLayerData } from '../../components/feature/MapUtils/hooks/useWMSLayers';
-import logo from "../../assets/logo.png";
+import logo from "../../assets/logo-transparent.png";
 
 // Sample WMS date arrays - Replace with actual API data
 const wmsDateArrays: WMSLayerData = {
@@ -610,7 +610,7 @@ export default function Home() {
             src={logo} 
             alt="Logo" 
             className="h-8 w-auto"
-          />
+          />Digisaka
 
           {/* Analysis button with better state management */}
           <button 

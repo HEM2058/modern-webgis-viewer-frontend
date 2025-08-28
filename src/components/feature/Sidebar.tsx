@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import logo from "../../assets/logo.jpg";
+import logo from "../../assets/logo-transparent.png";
 
 interface SidebarProps {
   isOpen: boolean;
